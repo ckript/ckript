@@ -683,6 +683,23 @@ function App() {
                 />
               )}
               {import.meta.env.DEV && (
+                /* Phase 5 profile-desk harness — the four prototype screens
+                   (2a/2b/2c/2d) plus the signed-out share over one fixture.
+                   A profile is personalized end to end, so the live route
+                   cannot render the same pixels twice; `?screen=` and
+                   `?state=` select which of them to look at. */
+                <Route
+                  path="/__mobile-profile"
+                  element={
+                    <AuthContext.Provider value={{ user: { _id: "preview-user", name: "Preview", role: "writer", token: "preview", favoriteScripts: [] }, loading: false, logout: () => {}, setUser: () => {} }}>
+                      <Suspense fallback={null}>
+                        <MobileApp devScreen="profile-desk" />
+                      </Suspense>
+                    </AuthContext.Provider>
+                  }
+                />
+              )}
+              {import.meta.env.DEV && (
                 /* Phase 4 Search harness — deterministic mixed, paged results
                    for browser geometry and accessibility sweeps. */
                 <Route

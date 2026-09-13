@@ -70,6 +70,9 @@ export function challengeDetailAction({ competition, entry, entryPending = false
   if (phase === "registration_closed") return { kind: "unavailable", label: "Writing begins soon", disabled: true };
   if (phase === "live") return { kind: "theme", label: "See the theme", targetId: "theme", disabled: false };
   if (phase === "results") return { kind: "results", label: "See the results", targetId: "results", disabled: false };
+  // Between the deadline and the declaration the page has a Results section that says what is
+  // coming; a dead "Registration closed" button told a returning entrant nothing.
+  if (phase === "judging") return { kind: "results", label: "About the results", targetId: "results", disabled: false };
   return { kind: "unavailable", label: "Registration closed", disabled: true };
 }
 

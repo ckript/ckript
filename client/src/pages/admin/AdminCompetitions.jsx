@@ -145,7 +145,7 @@ const aiRunStalled = (ai) =>
 const aiRunInFlight = (ai) => Boolean(ai?.startedAt) && !ai?.processedAt && !aiRunStalled(ai);
 
 function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
-  const [state, setState] = useState({ entries: [], phase: null, competition: null, loading: true });
+  const [state, setState] = useState({ entries: [], phase: null, competition: null, rewardLines: null, loading: true });
   const [error, setError] = useState("");
   const [snapshot, setSnapshot] = useState(null);
   const [expanded, setExpanded] = useState({});
@@ -153,13 +153,14 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
 
   const [winnerEntryId, setWinnerEntryId] = useState("");
   const [runnerUpEntryId, setRunnerUpEntryId] = useState("");
+  const [secondRunnerUpEntryId, setSecondRunnerUpEntryId] = useState("");
   const [specialAwards, setSpecialAwards] = useState([]);
   const [declaring, setDeclaring] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const { data } = await adminApi.get(`/admin/competitions/${competitionId}/entries`);
-      setState({ entries: data.entries || [], phase: data.phase, competition: data.competition, loading: false });
+      setState({ entries: data.entries || [], phase: data.phase, competition: data.competition, rewardLines: data.rewardLines || null, loading: false });
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load entries.");
       setState((prev) => ({ ...prev, loading: false }));
@@ -186,6 +187,7 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
   const declare = async () => {
     const winner = submitted.find((e) => e._id === winnerEntryId);
     const runnerUp = submitted.find((e) => e._id === runnerUpEntryId);
+    const secondRunnerUp = submitted.find((e) => e._id === secondRunnerUpEntryId);
     // ONE filtered list drives the confirmation, the participant arithmetic and the request. They
     // used to disagree: a row with a recipient but no award name was listed in the confirm dialog as
     // receiving an award, then dropped by the POST filter — so that writer silently got only a
@@ -197,14 +199,28 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
       setError("Every special award needs both a recipient and an award name.");
       return;
     }
-    const summary = [
-      `Winner: ${winner?.userId?.name || "—"} — Gold subscription (30 days), winner badge, featured script, AI trailer`,
-      runnerUp ? `Runner-Up: ${runnerUp.userId?.name} — Silver subscription (30 days), runner-up badge, featured script` : null,
+    // Quoted from the competition's OWN reward configuration (server-composed, the same lines the
+    // public page prints) — this dialog used to recite fixed copy whatever Prizes said.
+    const lines = state.rewardLines || {};
+    const describe = (placingLines) => (placingLines?.length ? placingLines.join(", ") : "rewards as configured under Prizes");
+    const specialLines = (title) => {
+      const row = (lines.special || []).find((s) => String(s.title || "").toLowerCase() === title.toLowerCase());
+      return row?.lines?.length ? row.lines.join(", ") : `${title} badge`;
+    };
+    const mentionsCash = (text) => /cash prize/i.test(text);
+    const placingLines = [
+      `Winner: ${winner?.userId?.name || "—"} — ${describe(lines.winner)}`,
+      runnerUp ? `Runner-Up: ${runnerUp.userId?.name} — ${describe(lines.runnerUp)}` : null,
+      secondRunnerUp ? `Second Runner-Up: ${secondRunnerUp.userId?.name} — ${describe(lines.secondRunnerUp)}` : null,
       ...validSpecials.map((a) => {
         const entry = submitted.find((e) => e._id === a.entryId);
-        return `"${a.title}": ${entry?.userId?.name || "—"} — ${a.title} badge`;
+        return `"${a.title}": ${entry?.userId?.name || "—"} — ${specialLines(a.title)}`;
       }),
-      `Everyone else who submitted (${Math.max(0, submitted.length - 1 - (runnerUp ? 1 : 0) - validSpecials.length)}) — participant badge`,
+    ].filter(Boolean);
+    const summary = [
+      ...placingLines,
+      `Everyone else who submitted (${Math.max(0, submitted.length - 1 - (runnerUp ? 1 : 0) - (secondRunnerUp ? 1 : 0) - validSpecials.length)}) — participant badge`,
+      placingLines.some(mentionsCash) ? "Cash prizes are NOT paid by the platform: Ckript pays them directly, and Finance records them as owed." : null,
     ].filter(Boolean).join("\n");
 
     if (!window.confirm(`Declare results?\n\n${summary}\n\nThis cannot be undone.`)) return;
@@ -215,9 +231,10 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
       const { data } = await adminApi.post(`/admin/competitions/${competitionId}/results`, {
         winnerEntryId,
         runnerUpEntryId: runnerUpEntryId || undefined,
+        secondRunnerUpEntryId: secondRunnerUpEntryId || undefined,
         specialAwards: validSpecials,
       });
-      onDeclared(`Results declared — ${data.counts.winners} winner, ${data.counts.runnerUp} runner-up, ${data.counts.special} special, ${data.counts.participants} participants.`);
+      onDeclared(`Results declared — ${data.counts.winners} winner, ${data.counts.runnerUp} runner-up, ${data.counts.secondRunnerUp || 0} second runner-up, ${data.counts.special} special, ${data.counts.participants} participants.`);
       onBack();
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to declare results.");
@@ -252,11 +269,13 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
           competitionId={competitionId}
           cls={cls}
           canPrefill={state.phase === "judging"}
-          onPrefill={({ winnerEntryId: w, runnerUpEntryId: r, specialAwards: sp }) => {
-            // Calls the declare form's OWN setters. The admin sees the same three selects, already
-            // filled, and still has to press Declare and clear the same confirmation.
+          onPrefill={({ winnerEntryId: w, runnerUpEntryId: r, secondRunnerUpEntryId: s, specialAwards: sp }) => {
+            // Calls the declare form's OWN setters. The admin sees the same selects, already
+            // filled, and still has to press Declare and clear the same confirmation. The third
+            // placing only lands when the competition has that tier switched on.
             setWinnerEntryId(w);
             setRunnerUpEntryId(r);
+            setSecondRunnerUpEntryId(state.rewardLines?.secondRunnerUp?.length ? (s || "") : "");
             setSpecialAwards(sp);
           }}
         />
@@ -265,7 +284,17 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
       {state.phase === "judging" && !declared ? (
         <div className={`${cls.card(dark)} mb-5 border-[#D14D37]/40`}>
           <h3 className={`${cls.heading(dark)} text-base`}>Declare results</h3>
-          <p className={`mt-1 text-xs ${cls.body(dark)}`}>Rewards are granted automatically and cannot be taken back.</p>
+          <p className={`mt-1 text-xs ${cls.body(dark)}`}>Rewards are granted automatically, exactly as configured under Prizes, and cannot be taken back.</p>
+          {state.rewardLines ? (
+            <ul className={`mt-2 space-y-1 text-xs ${cls.body(dark)}`}>
+              <li><b>Winner:</b> {(state.rewardLines.winner || []).join(", ") || "—"}</li>
+              <li><b>Runner-Up:</b> {(state.rewardLines.runnerUp || []).join(", ") || "—"}</li>
+              {state.rewardLines.secondRunnerUp?.length ? <li><b>Second Runner-Up:</b> {state.rewardLines.secondRunnerUp.join(", ")}</li> : null}
+              {(state.rewardLines.special || []).filter((s) => s.title).map((s) => (
+                <li key={s.title}><b>{s.title}:</b> {(s.lines || []).join(", ")}</li>
+              ))}
+            </ul>
+          ) : null}
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
@@ -282,6 +311,17 @@ function CompetitionEntries({ dark, competitionId, onBack, onDeclared }) {
                 {entryOptions}
               </select>
             </div>
+            {/* Only offered when the competition has the tier switched on under Prizes; the server
+                refuses a second runner-up for a competition that does not. */}
+            {state.rewardLines?.secondRunnerUp?.length ? (
+              <div>
+                <label className={cls.label(dark)}>Second Runner-Up (optional)</label>
+                <select value={secondRunnerUpEntryId} onChange={(e) => setSecondRunnerUpEntryId(e.target.value)} className={`${cls.input(dark)} mt-1`}>
+                  <option value="">None</option>
+                  {entryOptions}
+                </select>
+              </div>
+            ) : null}
           </div>
 
           <label className={`${cls.label(dark)} mt-5`}>Special awards</label>

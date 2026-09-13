@@ -54,6 +54,7 @@ export function normalizeChallengeHubPublic(listPayload = {}, archivePayload = {
       people: [
         ...(competition?.winner ? [{ person: competition.winner, award: "winner" }] : []),
         ...(competition?.runnerUp ? [{ person: competition.runnerUp, award: "runner_up" }] : []),
+        ...(competition?.secondRunnerUp ? [{ person: competition.secondRunnerUp, award: "second_runner_up" }] : []),
         ...items(competition?.special).map((person) => ({ person, award: "special" })),
       ],
     }))

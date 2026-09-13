@@ -684,10 +684,35 @@ describe("mobileRoutePolicy — account entry (D59)", () => {
     })).toMatchObject({ experience: "desktop", routeId, reason: "viewport" });
   });
 
-  it.each(AUTH_ROUTES)("does not decide %s while the session is still restoring", (pathname) => {
-    // Deciding here would flash a sign-in screen at someone who is signed in.
+  /*
+   * THE ONE THAT MADE THE WHOLE FAMILY UNREACHABLE.
+   *
+   * This assertion used to expect the opposite, on the reasoning that deciding
+   * here "would flash a sign-in screen at someone who is signed in". The flash
+   * it avoided was real. What it cost was the route: while the mobile branch
+   * waited, RootExperience rendered the desktop tree, and App.jsx answers these
+   * paths there with `<Navigate to="/" replace />`. The redirect committed on
+   * the first frame and rewrote the URL, so a direct link, a bookmark, a
+   * refresh or a shared invite never reached a native screen at all — while an
+   * in-app tap did, because that navigation happens long after `loading` has
+   * settled. That asymmetry is why nothing here caught it.
+   *
+   * The flash is now paid where it belongs: each screen holds its own
+   * `!loading && user` redirect and sends a signed-in viewer on, honouring the
+   * `?redirect=` the desktop fallback could never carry.
+   */
+  it.each(AUTH_ROUTES)("decides %s before the session resolves, so the URL survives", (pathname, routeId, screenId) => {
     expect(resolveMobileExperience({
       isMobile: true, authLoading: true, user: null, pathname,
+    })).toMatchObject({ experience: "mobile", routeId, screenId });
+  });
+
+  it("still waits for the session on a route whose answer depends on it", () => {
+    // The guard is narrowed, not removed: /dashboard is `protection:
+    // "authenticated"`, so resolving it against a viewer who has not loaded yet
+    // would decide on a `user` of null that is about to become someone.
+    expect(resolveMobileExperience({
+      isMobile: true, authLoading: true, user: null, pathname: "/dashboard",
     })).toMatchObject({ experience: "desktop", reason: "auth-loading" });
   });
 

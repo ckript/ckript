@@ -72,13 +72,16 @@ export const GUILDS = Object.freeze([
 ]);
 
 /* The link fields, and the label each one needs. `name` matches the key inside
-   `profile.links`, which is what the save points read. */
+   `profile.links`, which is what the save points read. `placeholder` is the
+   shape of the answer rather than a repeat of the label: these rows carry their
+   label in the left column, so the field itself has room to show what a valid
+   value looks like instead. */
 export const LINK_FIELDS = Object.freeze([
-  Object.freeze({ name: "portfolio", label: "Portfolio or website", purpose: "url" }),
-  Object.freeze({ name: "imdb", label: "IMDb", purpose: "url" }),
-  Object.freeze({ name: "linkedin", label: "LinkedIn", purpose: "url" }),
-  Object.freeze({ name: "instagram", label: "Instagram", purpose: "url" }),
-  Object.freeze({ name: "twitter", label: "X / Twitter", purpose: "url" }),
+  Object.freeze({ name: "portfolio", label: "Portfolio", purpose: "url", placeholder: "yoursite.com" }),
+  Object.freeze({ name: "imdb", label: "IMDb", purpose: "url", placeholder: "imdb.com/name/…" }),
+  Object.freeze({ name: "linkedin", label: "LinkedIn", purpose: "url", placeholder: "linkedin.com/in/…" }),
+  Object.freeze({ name: "instagram", label: "Instagram", purpose: "url", placeholder: "@handle" }),
+  Object.freeze({ name: "twitter", label: "X / Twitter", purpose: "url", placeholder: "@handle" }),
 ]);
 
 /*

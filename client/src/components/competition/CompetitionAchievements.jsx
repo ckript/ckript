@@ -16,6 +16,7 @@ import { yearSuffix } from "./labels";
 const AWARD_STYLES = {
   winner: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   runner_up: "bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200",
+  second_runner_up: "bg-stone-100 text-stone-700 dark:bg-stone-700/60 dark:text-stone-200",
   special: "bg-[#D14D37]/10 text-[#D14D37]",
   participant: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200",
 };
@@ -71,14 +72,29 @@ const CompetitionAchievements = ({ userId, badges = [], className = "" }) => {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Badges</h3>
           <div className="mt-3 flex flex-wrap gap-2">
             {shownBadges.map((badge, i) => (
-              <span
-                key={`${badge.id}-${i}`}
-                className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
-              >
-                <Medal className="h-3.5 w-3.5" aria-hidden="true" />
-                {badge.label}
-                {badge.awardedAt ? <span className="font-normal opacity-70">{new Date(badge.awardedAt).getFullYear()}</span> : null}
-              </span>
+              // A badge awarded with the competition's own artwork shows that artwork; one without
+              // keeps the medal chip. The label stays visible either way — the image is decoration
+              // on top of the record, not a replacement for it.
+              badge.imageUrl ? (
+                <span
+                  key={`${badge.id}-${i}`}
+                  className="inline-flex items-center gap-2 rounded-full bg-amber-50 py-1 pl-1 pr-3 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                  data-badge-image=""
+                >
+                  <img src={badge.imageUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                  {badge.label}
+                  {badge.awardedAt ? <span className="font-normal opacity-70">{new Date(badge.awardedAt).getFullYear()}</span> : null}
+                </span>
+              ) : (
+                <span
+                  key={`${badge.id}-${i}`}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                >
+                  <Medal className="h-3.5 w-3.5" aria-hidden="true" />
+                  {badge.label}
+                  {badge.awardedAt ? <span className="font-normal opacity-70">{new Date(badge.awardedAt).getFullYear()}</span> : null}
+                </span>
+              )
             ))}
           </div>
         </div>

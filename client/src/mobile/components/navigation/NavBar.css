@@ -36,6 +36,21 @@
   min-width: 0;
 }
 
+/*
+ * The More cell is a <button> where its neighbours are <a>s, so it needs the
+ * button reset the links never did. Everything else — size, colour, active
+ * state, pressed state, focus ring — comes from `.ckm-navbar__link`, because a
+ * cell that looked different from the four beside it would read as a control
+ * rather than as part of the bar.
+ */
+.ckm .ckm-navbar__link--more {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
 .ckm .ckm-navbar__link {
   flex: 1;
   min-width: 0;

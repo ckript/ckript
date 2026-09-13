@@ -81,11 +81,12 @@ export default function JudgingResults({ dark, competitionId, cls, onPrefill, ca
     // blank makes the admin look, which is the correct outcome.
     const first = ranked[0] && !ranked[0].tiedWith.length ? ranked[0] : null;
     const second = ranked.find((r) => r.suggestedRank === 2 && !r.tiedWith.length) || null;
+    const third = ranked.find((r) => r.suggestedRank === 3 && !r.tiedWith.length) || null;
     const specials = nominations
       .filter((n) => n.suggested)
       .map((n) => ({ entryId: n.suggested.entryId, title: n.label }));
 
-    onPrefill({ winnerEntryId: first?.entryId || "", runnerUpEntryId: second?.entryId || "", specialAwards: specials });
+    onPrefill({ winnerEntryId: first?.entryId || "", runnerUpEntryId: second?.entryId || "", secondRunnerUpEntryId: third?.entryId || "", specialAwards: specials });
   };
 
   return (

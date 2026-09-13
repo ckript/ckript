@@ -83,19 +83,25 @@ const type = async (input, value) => {
   });
 };
 
-const choose = async (select, value) => {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-  await act(async () => {
-    setter.call(select, value);
-    select.dispatchEvent(new window.Event("change", { bubbles: true }));
-  });
+/*
+ * Answer one of the "picks" rows. The redesign replaced the native <select>
+ * with a row that opens the family's wheel sheet, so the test drives what the
+ * visitor drives: tap the row, tap the option.
+ */
+const choose = async (el, rowLabel, optionLabel) => {
+  const row = [...el.querySelectorAll("button")]
+    .find((button) => button.textContent.trim().startsWith(rowLabel));
+  await act(async () => row.click());
+
+  const option = [...el.querySelectorAll("[role='option']")]
+    .find((entry) => entry.textContent.trim() === optionLabel);
+  await act(async () => option.click());
 };
 
 /* Fill the About step's two required demographics and walk to Links. */
 const walkAboutToLinks = async (el) => {
-  const selects = el.querySelectorAll("select");
-  await choose(selects[1], "Female");       // Gender
-  await choose(selects[2], "Indian");       // Nationality
+  await choose(el, "Gender", "Female");
+  await choose(el, "Nationality", "Indian");
   await advance(el);                        // -> Guilds
   await advance(el);                        // -> Links
 };
@@ -302,6 +308,48 @@ describe("SignUpMobile — the draft", () => {
   });
 });
 
+describe("SignUpMobile — the long lists, and the end", () => {
+  it("keeps both selections when two rows are tapped before a re-render", async () => {
+    /*
+     * The genre list is forty-eight rows, so two taps landing in one render
+     * pass is ordinary use rather than a corner case. A toggle written against
+     * the closed-over array loses the first of them — see SignUpPanels.toggleIn.
+     */
+    const el = await mount({ entry: "/signup?as=writer&step=8", user: { _id: "u1", role: "creator" } });
+    const rows = [...el.querySelectorAll("[aria-pressed]")];
+    await act(async () => { rows[0].click(); rows[3].click(); });
+
+    expect(rows[0].getAttribute("aria-pressed")).toBe("true");
+    expect(rows[3].getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("ends on a finish that names the account and offers that role's first act", async () => {
+    // Landing straight in the app would be correct and silent. This says which
+    // account now exists, which is the one thing the flow never confirmed.
+    const el = await mount({ entry: "/signup?as=industry&step=7", user: { _id: "u1", role: "professional" } });
+    const boxes = [...el.querySelectorAll("[role='checkbox']")];
+    await act(async () => boxes[0].click());
+    await act(async () => boxes[1].click());
+    await advance(el);
+
+    expect(el.querySelector('[data-screen-id="sign-up-done"]')).not.toBeNull();
+    expect(el.textContent).toContain("Industry professional account created");
+    expect([...el.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toContain("/writers");
+    // And the audience default is still one tap away for anyone who does not
+    // want to be sent anywhere in particular.
+    expect(buttonWith(el, "Look around first")).toBeDefined();
+  });
+
+  it("does not bounce the visitor away from the finish just because they are signed in", async () => {
+    const el = await mount({ entry: "/signup?as=industry&step=7", user: { _id: "u1", role: "professional" } });
+    const boxes = [...el.querySelectorAll("[role='checkbox']")];
+    await act(async () => boxes[0].click());
+    await act(async () => boxes[1].click());
+    await advance(el);
+    expect(host.textContent).not.toContain("dashboard-landed");
+  });
+});
+
 describe("SignUpMobile — accessibility", () => {
   it("keeps one h1 and names every control", async () => {
     const el = await mount();
@@ -374,12 +422,8 @@ describe("SignUpMobile — the writer profile the server will actually accept", 
 
   it("never writes the demographics to storage, even while they are on screen", async () => {
     const el = await mount({ entry: "/signup?as=writer&step=5" });
-    const selects = el.querySelectorAll("select");
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-    await act(async () => {
-      setter.call(selects[1], "Female");
-      selects[1].dispatchEvent(new window.Event("change", { bubbles: true }));
-    });
+    await choose(el, "Gender", "Female");
+    expect(el.textContent).toContain("Female");
     expect(JSON.stringify(window.sessionStorage)).not.toContain("Female");
   });
 });

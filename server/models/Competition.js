@@ -103,12 +103,73 @@ const competitionSchema = new mongoose.Schema({
   },
 
   prizes: {
+    // Free-text EXTRAS per placing — things the platform does not deliver (producer meetings, a
+    // masterclass). The rewards the platform grants live in `grants` below; the public pages print
+    // both, grants first. See utils/competitionRewards.js.
     winner: [{ type: String }],
     runnerUp: [{ type: String }],
     secondRunnerUp: [{ type: String }],
-    special: [{ title: String, description: String }],
+    // Named category awards. Each carries a badge by definition, and optionally a plan, a featured
+    // placement and a cash amount of its own.
+    special: [{
+      title: String,
+      description: String,
+      plan: { type: String, enum: ["none", "silver", "gold"], default: "none" },
+      planDays: { type: Number, min: 1, max: 365, default: 30 },
+      featured: { type: Boolean, default: false },
+      cashMinor: { type: Number, min: 0, default: 0 },
+      cashCurrency: { type: String, enum: ["INR", "USD"], default: "INR" },
+      // This award's own badge artwork; falls back to badgeImages.special when empty.
+      badgeUrl: { type: String, default: "" },
+    }],
+    // What declaring results GRANTS to each placing. Absent on competitions saved before this
+    // existed; resolveGrants() then applies DEFAULT_GRANTS, which reproduce the old fixed behaviour.
+    // Cash is recorded as owed in the finance ledger and paid by Ckript outside the platform.
+    grants: {
+      winner: {
+        plan: { type: String, enum: ["none", "silver", "gold"] },
+        planDays: { type: Number, min: 1, max: 365 },
+        featured: Boolean,
+        aiTrailer: Boolean,
+        cashMinor: { type: Number, min: 0 },
+        cashCurrency: { type: String, enum: ["INR", "USD"] },
+        // Consulted for the second runner-up only: that tier is opt-in per competition.
+        enabled: Boolean,
+      },
+      runnerUp: {
+        plan: { type: String, enum: ["none", "silver", "gold"] },
+        planDays: { type: Number, min: 1, max: 365 },
+        featured: Boolean,
+        aiTrailer: Boolean,
+        cashMinor: { type: Number, min: 0 },
+        cashCurrency: { type: String, enum: ["INR", "USD"] },
+        // Consulted for the second runner-up only: that tier is opt-in per competition.
+        enabled: Boolean,
+      },
+      secondRunnerUp: {
+        plan: { type: String, enum: ["none", "silver", "gold"] },
+        planDays: { type: Number, min: 1, max: 365 },
+        featured: Boolean,
+        aiTrailer: Boolean,
+        cashMinor: { type: Number, min: 0 },
+        cashCurrency: { type: String, enum: ["INR", "USD"] },
+        // Consulted for the second runner-up only: that tier is opt-in per competition.
+        enabled: Boolean,
+      },
+    },
   },
   
+  // The admin's own artwork for each badge kind (image URLs, uploaded through the editor). A
+  // badge awarded while an image is set carries that image on the writer's profile, in the Hall
+  // of Fame and on the results page; an empty kind stays a text chip.
+  badgeImages: {
+    winner: { type: String, default: "" },
+    runnerUp: { type: String, default: "" },
+    secondRunnerUp: { type: String, default: "" },
+    special: { type: String, default: "" },
+    participant: { type: String, default: "" },
+  },
+
   // Advanced Dynamic Prizes 
   detailedPrizes: [{
     title: String,

@@ -27,6 +27,7 @@ const KIND_LABEL = {
   script_purchase: "Script purchases",
   script_hold: "Script holds",
   ai_trailer: "AI trailers",
+  cash_prize: "Cash prizes owed",
   credits: "Credits",
   other: "Other",
 };

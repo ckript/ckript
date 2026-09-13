@@ -52,10 +52,27 @@ describe("buildMobileNav — the tab sets come from the desktop presets", () => 
     expect(nav.drawer.filter((t) => !t.divider).map((t) => t.key)).toContain("create");
   });
 
-  it("gives the industry audience Discover, Featured, Messages and Profile", () => {
+  /*
+   * THE INDUSTRY BAR, changed deliberately.
+   *
+   * It was Discover / Featured / Messages / Profile. There is no drawer in the
+   * mobile app and no industry screen links to /dashboard or /writers, so a
+   * producer had no route to their own deal book or to the writer directory
+   * from anywhere on a phone. Featured gave up its slot because Discover
+   * already surfaces featured projects — it is still one tap away under More,
+   * along with Profile.
+   */
+  it("gives the industry audience Discover, Dashboard, Writers and Messages", () => {
     expect(navFor("producer").tabs.map((t) => t.key)).toEqual([
-      "home", "featured", "messages", "profile",
+      "home", "dashboard", "writers", "messages",
     ]);
+  });
+
+  it("keeps the producer's remaining destinations under More", () => {
+    const overflow = navFor("producer").overflow.map((t) => t.key);
+    expect(overflow).toEqual(expect.arrayContaining([
+      "featured", "top", "search", "mandates", "saved", "profile",
+    ]));
   });
 
   it("gives the reader Home, Discover, Messages and Profile", () => {
@@ -75,13 +92,51 @@ describe("buildMobileNav — the tab sets come from the desktop presets", () => 
    * nobody mapped falling through to the writer's chrome and being offered
    * "Create Project". Every role the server can issue must land on a real bar.
    */
-  it("gives every known role a four-tab bar ending in Profile", () => {
+  it("gives every known role a full four-tab bar", () => {
     for (const role of KNOWN_ROLES) {
       const { tabs } = navFor(role);
       expect(tabs, role).toHaveLength(4);
-      expect(tabs.at(-1).key, role).toBe("profile");
       expect(tabs.every((t) => t.path && t.label), role).toBe(true);
     }
+  });
+
+  /*
+   * Profile is no longer pinned to the last slot — the industry bar needs all
+   * four for destinations with no other route on a phone. It must still be
+   * reachable, from the bar or from More.
+   */
+  it.each(KNOWN_ROLES)("role %s can still reach Profile", (role) => {
+    const nav = navFor(role);
+    const reachable = [...nav.tabs, ...nav.overflow].map((t) => t.path);
+    expect(reachable).toContain("/ada");
+  });
+
+  /*
+   * The whole point of the More cell. The bar and its sheet are the entire
+   * navigation of the mobile app; anything in the audience's destination list
+   * that appears in neither cannot be opened on a phone.
+   */
+  it.each(KNOWN_ROLES)("role %s can reach every destination it has", (role) => {
+    const nav = navFor(role);
+    const desktop = buildNav({ user: { role, _id: "u1" }, profilePath: "/ada" });
+    const reachable = new Set([...nav.tabs, ...nav.overflow].map((t) => t.path));
+
+    for (const item of desktop.drawer.filter((i) => i && !i.divider)) {
+      expect(reachable.has(item.path), `${role}: ${item.label} (${item.path})`).toBe(true);
+    }
+  });
+
+  it.each(KNOWN_ROLES)("role %s gets renderable, non-duplicated overflow rows", (role) => {
+    const nav = navFor(role);
+    const ligatures = new Set(Object.values(SYMBOLS));
+
+    for (const row of nav.overflow) {
+      expect(row.path && row.label, `${role}/${row.key}`).toBeTruthy();
+      expect(ligatures.has(row.glyph), `${role}/${row.key} → ${row.glyph}`).toBe(true);
+    }
+
+    const paths = [...nav.tabs, ...nav.overflow].map((t) => t.path);
+    expect(new Set(paths).size, `${role} lists a destination twice`).toBe(paths.length);
   });
 
   it("never offers a writer's authoring destination to a non-writer", () => {

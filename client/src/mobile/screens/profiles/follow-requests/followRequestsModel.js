@@ -1,25 +1,10 @@
-const text = (value) => String(value ?? "").trim();
-
-const roleLabel = (value) => text(value)
-  .replace(/_/g, " ")
-  .replace(/\b\w/g, (letter) => letter.toUpperCase());
-
-export function buildIncomingFollowRequestList(requests = []) {
-  return (Array.isArray(requests) ? requests : [])
-    .map((request) => {
-      const member = request?.from || {};
-      const fromUserId = text(member._id);
-      const username = text(member.writerProfile?.username);
-      return {
-        id: text(request?._id) || fromUserId,
-        fromUserId,
-        name: text(member.name) || "Ckript member",
-        role: roleLabel(member.role) || "Member",
-        bio: text(member.bio),
-        image: text(member.profileImage),
-        profilePath: fromUserId ? `/profile/${encodeURIComponent(username || fromUserId)}` : "",
-        createdAt: request?.createdAt || null,
-      };
-    })
-    .filter(({ id, fromUserId }) => id && fromUserId);
-}
+/*
+ * The inbound follow-request list.
+ *
+ * The implementation moved to `pages/profile/ownerInbox.js` on 2026-09-03, when
+ * the owner profile grew an inbox that mixes follow requests with meeting
+ * requests: a shared module must not import from `mobile/`, and two copies of
+ * one normalizer is how the two queues would drift apart again. This file stays
+ * so its callers and its tests keep their address.
+ */
+export { buildIncomingFollowRequestList } from "../../../../pages/profile/ownerInbox";

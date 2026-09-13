@@ -62,8 +62,17 @@ export const writerNav = ({ profilePath, msgCount }) => ({
    */
   mobileItems: [
     { key: "projects", path: "/dashboard?tab=projects", label: "Projects", icon: "projects" },
+    /*
+     * The rail calls this "Writer Profile", which is right beside Dashboard,
+     * Create, Upload and Challenge and too long for a fifth of a phone. The
+     * compact entry is also what puts Profile in the bar at all now that
+     * buildNav no longer pins it there.
+     */
+    { key: "profile", path: profilePath, label: "Profile", icon: "profile" },
   ],
-  mobileKeys: ["dashboard", "projects", "messages"],
+  /* Same four destinations, in the same order, as before Profile became
+     explicit — this preset's bar does not change. */
+  mobileKeys: ["dashboard", "projects", "messages", "profile"],
 
   /*
    * The drawer's contextual list. Writers see the projects they are actively

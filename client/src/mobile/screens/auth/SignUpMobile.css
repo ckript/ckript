@@ -1,0 +1,142 @@
+/*
+ * Ckript Mobile — the sign-up stepper (prefix: ckm-signup)
+ * ------------------------------------------------------------------
+ * Only what is the stepper's own: the progress rail under the bar, the docked
+ * footer's secondary line, and the finish. Everything else on these screens is
+ * the shared `ckm-auth` surface and control kit.
+ *
+ * Separate from `ckm-auth` for the reason `ckm-editor` is separate from
+ * `ckm-create-project`: a flow surface with its own chrome is its own page
+ * family, and one prefix per owner is what keeps §7.2 answerable.
+ */
+
+/* --- Progress ----------------------------------------------------------
+ * A 2px rail rather than nine ticks: at 320px, nine segments are under 20px
+ * each and read as texture rather than as a count. The count is carried in
+ * words by the step eyebrow, which is the announced version — this is the
+ * glance version, and it is aria-hidden so the two are not read twice.
+ */
+.ckm .ckm-signup__rail {
+  height: 2px;
+  margin: 0 var(--ckma-inset) 8px;
+  border-radius: 2px;
+  background: var(--ckma-track);
+  overflow: hidden;
+}
+
+.ckm .ckm-signup__rail-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ckma-accent);
+  transition: width 450ms var(--ckm-ease);
+}
+
+/* --- Footer's second line ----------------------------------------------- */
+
+.ckm .ckm-signup__later {
+  height: var(--ckm-touch-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 400 15px/1 var(--ckm-body);
+  color: var(--ckma-ink-2);
+  cursor: pointer;
+}
+
+.ckm .ckm-signup__later:active {
+  opacity: 0.5;
+}
+
+.ckm .ckm-signup__alt {
+  margin: 0;
+  text-align: center;
+  font: 400 15px/20px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-signup__alt a {
+  font-weight: var(--ckm-weight-medium);
+  color: var(--ckma-accent-ink);
+  text-decoration: none;
+}
+
+/* --- The finish ---------------------------------------------------------
+ * The one screen in the flow that is not a form. Full-bleed still, the account
+ * that was just made named in a badge, and the two ways on.
+ */
+.ckm .ckm-auth__body.ckm-signup__done-body {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, #171612 0 9px, #100f0a 9px 18px);
+}
+
+.ckm .ckm-signup__done-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.72) contrast(1.08);
+}
+
+.ckm .ckm-signup__done-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(11, 10, 6, 0.12) 10%,
+    rgba(11, 10, 6, 0.62) 58%,
+    rgba(11, 10, 6, 0.95) 86%,
+    #0b0a06 100%
+  );
+}
+
+.ckm .ckm-signup__done-copy {
+  position: absolute;
+  left: 30px;
+  right: 30px;
+  bottom: 26px;
+}
+
+.ckm .ckm-signup__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 8px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  font: var(--ckm-weight-medium) 13px/1 var(--ckm-body);
+  color: #fff;
+  animation: ckm-auth-pop 500ms var(--ckm-ease) both;
+}
+
+.ckm .ckm-signup__badge-mark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 10px;
+  background: var(--ckma-accent);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.ckm .ckm-signup__done-title {
+  margin: 16px 0 0;
+  font: var(--ckm-weight-medium) 43px/47px var(--ckm-display);
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+/* Focused on arrival so the finish is announced; a landing, not a tab stop. */
+.ckm .ckm-auth .ckm-signup__done-title:focus,
+.ckm .ckm-auth .ckm-signup__done-title:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

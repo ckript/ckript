@@ -80,11 +80,45 @@ export const readUnsubscribeToken = (token) => {
   return { userId, category };
 };
 
-/** The absolute link that goes in the email. */
+/**
+ * Where the unsubscribe link points: THIS server, not the client app.
+ *
+ * /api/unsubscribe is a route on the API. In production the SPA and the API are separate origins
+ * (the client reaches the API through VITE_API_URL), so a link built from the client's origin —
+ * which is what the broadcast used to do — lands on the SPA's router and renders a blank page. It is
+ * the same mistake as the Google Calendar redirect URI that pointed at the front end, and it was
+ * invisible for the same reason: the request never reached a server that could log it.
+ *
+ * PUBLIC_API_URL wins when set, for the day the API sits behind a different public hostname than
+ * the one it sees. Otherwise the request's own protocol and host — server.js sets `trust proxy`, so
+ * behind Cloud Run these are the public values, not the proxy's.
+ *
+ * Read lazily, never at module load — dotenv runs after imports in this codebase.
+ */
+export const resolveUnsubscribeBaseUrl = (req) => {
+  const configured = String(process.env.PUBLIC_API_URL || "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  const host = req?.get?.("host") || "";
+  if (!host) return "";
+  return `${req.protocol || "https"}://${host}`;
+};
+
+/**
+ * The absolute link that goes in the email.
+ *
+ * Refuses to build a relative URL. An empty base used to yield "/api/unsubscribe?token=…", which is
+ * a working path on a web page and a dead link in an inbox — and because it was non-empty, the
+ * List-Unsubscribe headers still went out pointing at it.
+ */
 export const buildUnsubscribeUrl = (baseUrl, userId, category = "marketing") => {
+  const base = String(baseUrl || "").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(base)) {
+    console.error("[unsubscribe] refusing to build a link without an absolute base URL");
+    return "";
+  }
   const token = createUnsubscribeToken(userId, category);
   if (!token) return "";
-  return `${String(baseUrl || "").replace(/\/+$/, "")}/api/unsubscribe?token=${token}`;
+  return `${base}/api/unsubscribe?token=${token}`;
 };
 
 export default createUnsubscribeToken;

@@ -59,11 +59,20 @@ beforeEach(() => {
   get.mockReset(); post.mockReset(); put.mockReset();
   get.mockImplementation((url) => {
     if (url === "/admin/competitions") return Promise.resolve({ data: { competitions: [COMPETITION] } });
-    if (url.endsWith("/entries")) return Promise.resolve({ data: { entries: ENTRIES, phase: "judging", competition: COMPETITION } });
+    if (url.endsWith("/entries")) return Promise.resolve({ data: { entries: ENTRIES, phase: "judging", competition: COMPETITION, rewardLines: REWARD_LINES } });
     return Promise.resolve({ data: {} });
   });
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); delete window.confirm; });
+
+// What the server composes from the competition's reward configuration — the dialog quotes these
+// rather than fixed copy, so what the admin confirms is what the declare flow grants.
+const REWARD_LINES = {
+  winner: ["Gold plan for 30 days", "Featured placement when you publish your script", "AI trailer for your script", "Winner badge"],
+  runnerUp: ["Silver plan for 30 days", "Featured placement when you publish your script", "Runner-Up badge"],
+  secondRunnerUp: [],
+  special: [],
+};
 
 describe("AdminCompetitions list", () => {
   it("lists competitions with phase, lifecycle and entry counts", async () => {
@@ -129,10 +138,10 @@ describe("declare results", () => {
 
     const message = confirmSpy.mock.calls[0][0];
     expect(message).toContain("Ada");
-    expect(message).toContain("Gold subscription (30 days)");
-    expect(message).toContain("winner badge");
-    expect(message).toContain("featured script");
-    expect(message).toContain("AI trailer");
+    expect(message).toContain("Gold plan for 30 days");
+    expect(message).toContain("Winner badge");
+    expect(message).toContain("Featured placement when you publish your script");
+    expect(message).toContain("AI trailer for your script");
     expect(message).toContain("cannot be undone");
     // Cancelling must not fire the irreversible request.
     expect(post).not.toHaveBeenCalled();

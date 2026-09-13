@@ -40,6 +40,7 @@ const ledgerEntrySchema = new mongoose.Schema(
         "script_purchase",          // investor buys a script
         "script_hold",              // paid option/hold on a script
         "ai_trailer",               // trailer generation
+        "cash_prize",               // competition cash prize: owed by Ckript, paid outside the platform
         "credits",                  // credit top-ups and spends
         "other",
       ],

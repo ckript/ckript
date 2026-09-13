@@ -316,6 +316,16 @@ export default function useMobileSignUp({ roleKey, step, goToStep, onComplete } 
   const isLast = step >= steps.length;
   const total = steps.length;
 
+  /* What the resume prompt has to show before someone can answer it: how far
+     the draft got, and how old it is. Both are facts the draft already carries;
+     without them the offer is "continue something" with no way to tell whether
+     that something is worth continuing. */
+  const resumePoint = useMemo(() => {
+    if (!draft) return null;
+    const index = Math.min(Math.max(draft.step || 1, 1), steps.length) - 1;
+    return { step: index + 1, total: steps.length, title: steps[index].title, savedAt: draft.savedAt };
+  }, [draft, steps]);
+
   /* A referral in the URL wins over a stored one, and is stored so it survives
      the OTP detour through the mail app. Mirrors AuthContext's own capture. */
   const adoptReferral = useCallback((value) => {
@@ -607,6 +617,7 @@ export default function useMobileSignUp({ roleKey, step, goToStep, onComplete } 
     referralStatus,
     adoptReferral,
     resumeOffered,
+    resumePoint,
     keepDraft,
     discardDraft,
     advance,

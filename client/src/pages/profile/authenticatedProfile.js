@@ -13,7 +13,18 @@ export const AUTHENTICATED_PROFILE_STATUS = Object.freeze({
 });
 
 const text = (value) => String(value ?? "").trim();
-const idOf = (value) => text(value?._id || value?.id || value);
+/*
+ * An id, or nothing.
+ *
+ * The previous form fell through to `String(value)` for a record carrying
+ * neither `_id` nor `id`, which turns a MISSING id into the string
+ * "[object Object]" — a value that is truthy, passes every `if (id)` guard, and
+ * then quietly fails to match anything or reaches an endpoint as a bad key.
+ * An object with no id has no id; say so.
+ */
+const idOf = (value) => (
+  value && typeof value === "object" ? text(value._id || value.id) : text(value)
+);
 
 const failure = (cause, fallbackMessage) => ({
   ok: false,

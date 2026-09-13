@@ -490,8 +490,11 @@ const userSchema = new mongoose.Schema({
   // Earned achievement badges (competitions). Server-persisted and public — unlike the localStorage
   // reader badges in client AchievementSystem.jsx, which are a separate, unrelated feature.
   badges: [{
-    id: { type: String },        // challenge_winner | challenge_runner_up | challenge_special | challenge_participant
+    id: { type: String },        // challenge_winner | challenge_runner_up | challenge_second_runner_up | challenge_special | challenge_participant
     label: { type: String },
+    // The competition's own artwork for this badge, stamped on at award time so the profile keeps
+    // showing it even if the competition's images change later. Empty means a text chip.
+    imageUrl: { type: String, default: "" },
     competitionId: { type: mongoose.Schema.Types.ObjectId, ref: "Competition" },
     awardedAt: { type: Date, default: Date.now },
   }],

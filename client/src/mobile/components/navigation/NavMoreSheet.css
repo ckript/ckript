@@ -1,0 +1,31 @@
+/*
+ * ckm-more — the bar's overflow sheet.
+ *
+ * Almost nothing: the sheet, the list and the row are all existing primitives,
+ * and a menu of destinations is exactly what they are for. What is here is only
+ * what a menu needs that a generic list does not.
+ */
+
+/* The rows carry their own dividers; the sheet body supplies the breathing
+   room the primitives deliberately leave to the caller. */
+.ckm .ckm-more__list {
+  padding-bottom: 4px;
+}
+
+/*
+ * Matches the bar's badge rather than inventing a second one: same token, same
+ * 11px/18px metrics that clear SC 1.4.3 for white on brand colour. It sits in
+ * the row's trailing slot, so it needs no absolute positioning.
+ */
+.ckm .ckm-more__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--ckm-accent-strong);
+  color: #fff;
+  font: 700 11px/18px var(--ckm-body);
+}

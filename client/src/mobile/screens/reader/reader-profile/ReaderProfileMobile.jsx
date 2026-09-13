@@ -27,7 +27,7 @@ import { useToast } from "../../../components/feedback/toastContext";
 import MobileShell from "../../../shell/MobileShell";
 import { MOBILE_SHELL_MODE } from "../../../shell/mobileShellModes";
 import DiscoveryProjectCard from "../../discovery/components/DiscoveryProjectCard";
-import OwnerProfileEditor from "../../profiles/owner-profile/OwnerProfileEditor";
+import ProfileEditorDialog from "../../profiles/desk/ProfileEditorDialog";
 import "./ReaderProfileMobile.css";
 
 const dateLabel = (value) => {
@@ -150,7 +150,7 @@ export default function ReaderProfileMobile({ user }) {
   }
 
   const overlays = data.own && editorOpen ? (
-    <OwnerProfileEditor
+    <ProfileEditorDialog
       open
       profile={profile}
       pending={saving}

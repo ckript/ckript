@@ -40,7 +40,7 @@ import {
 // Unsubscribe lives in its own controller because its endpoints are PUBLIC and sessionless — someone
 // clicking a link in their inbox has no session and will not sign in to stop mail they did not want.
 import { filterSubscribed } from "./unsubscribeController.js";
-import { buildUnsubscribeUrl } from "../utils/unsubscribeToken.js";
+import { buildUnsubscribeUrl, resolveUnsubscribeBaseUrl } from "../utils/unsubscribeToken.js";
 
 const buildChatId = (idA, idB) => {
     const sorted = [idA.toString(), idB.toString()].sort();
@@ -1230,7 +1230,10 @@ export const sendAudienceBroadcast = async (req, res) => {
                 sendAdminBroadcastEmail(recipient.email, recipient.name, {
                     // Per recipient, because the token identifies THEM. One shared link would let
                     // whoever clicked it unsubscribe somebody else.
-                    unsubscribeUrl: buildUnsubscribeUrl(resolveClientOriginFromRequest(req), recipient._id, "marketing"),
+                    // From the API's OWN origin, not the client's. /api/unsubscribe is a route on this
+                    // server; in production the SPA lives elsewhere, and a link built from its origin
+                    // lands on the front-end router and renders nothing.
+                    unsubscribeUrl: buildUnsubscribeUrl(resolveUnsubscribeBaseUrl(req), recipient._id, "marketing"),
                     title,
                     content,
                     actionUrl,

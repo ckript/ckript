@@ -1,0 +1,132 @@
+/*
+ * Ckript Mobile — account entry sheets (prefix: ckm-auth)
+ * ------------------------------------------------------------------
+ * The picker sheet the "picks" rows open. It sits on `components/overlays/
+ * Overlay`, which already supplies the scrim, the focus trap, the inert
+ * background, Escape-to-close and the slide-up — and, importantly, positions
+ * itself inside `.ckm-root` rather than the browser viewport, so on a tablet
+ * the sheet covers the app and not the whole window.
+ *
+ * Overlay's own bottom placement already carries this family's radius
+ * (--ckm-r-sheet is 26px) and shadow (--ckm-shadow-sheet), so only the ground
+ * and the contents are restated here.
+ */
+
+.ckm .ckm-auth__sheet {
+  background: var(--ckma-bg);
+  color: var(--ckma-ink);
+  font-family: var(--ckm-body);
+}
+
+.ckm .ckm-auth__sheet-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ckm-space-3);
+  padding: 14px var(--ckma-inset) 10px;
+  border-bottom: 1px solid var(--ckma-sep);
+}
+
+.ckm .ckm-auth__sheet-title {
+  flex: 1;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--ckm-weight-semibold) 15px/1 var(--ckm-body);
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__sheet-cancel,
+.ckm .ckm-auth__sheet-done {
+  height: 36px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__sheet-cancel {
+  font: 400 17px/1 var(--ckm-body);
+  color: var(--ckma-ink-3);
+}
+
+.ckm .ckm-auth__sheet-done {
+  font: var(--ckm-weight-semibold) 17px/1 var(--ckm-body);
+  color: var(--ckma-accent-ink);
+}
+
+.ckm .ckm-auth__sheet-cancel:active,
+.ckm .ckm-auth__sheet-done:active {
+  opacity: 0.5;
+}
+
+/* --- The wheel ----------------------------------------------------------
+ * A scroll-snapping column with a fixed selection band, the way the platform
+ * picker reads. The band is decoration: the real selected state is on the
+ * option, which is why it is `pointer-events: none` and aria-hidden by omission.
+ */
+.ckm .ckm-auth__wheel {
+  position: relative;
+  height: 216px;
+}
+
+.ckm .ckm-auth__wheel-band {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 82px;
+  height: 36px;
+  border-radius: 9px;
+  background: rgba(11, 10, 6, 0.06);
+  pointer-events: none;
+}
+
+.ckm .ckm-auth__wheel-list {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  padding: 82px 0;
+  /* A visible track would read as a second edge inside the band. The list is
+     obviously scrollable from the dimmed rows above and below it. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ckm .ckm-auth__wheel-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.ckm .ckm-auth__wheel-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--ckma-inset);
+  border: 0;
+  background: none;
+  scroll-snap-align: center;
+  font: 400 21px/1 var(--ckm-body);
+  color: var(--ckma-ink);
+  opacity: 0.42;
+  cursor: pointer;
+  transition: opacity 180ms ease;
+}
+
+.ckm .ckm-auth__wheel-option[aria-selected="true"] {
+  opacity: 1;
+}
+
+.ckm .ckm-auth__wheel-option:focus-visible {
+  outline: var(--ckm-focus-ring-width) solid var(--ckm-focus-ring);
+  outline-offset: calc(var(--ckm-focus-ring-offset) * -1);
+  opacity: 1;
+}
+
+/* The home-indicator strip the platform draws over the bottom of the sheet. */
+.ckm .ckm-auth__sheet-foot {
+  height: max(var(--ckm-safe-bottom), 20px);
+}

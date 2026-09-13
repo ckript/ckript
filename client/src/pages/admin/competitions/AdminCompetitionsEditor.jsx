@@ -100,7 +100,7 @@ export default function AdminCompetitionsEditor() {
         name: "",
         entryFee: { mode: "paid", inrMinor: 9800, usdMinor: 200 },
         dates: { regOpensAt: "", regClosesAt: "", startsAt: "", endsAt: "" },
-        prizes: { winner: [], runnerUp: [], special: [] },
+        prizes: { winner: [], runnerUp: [], secondRunnerUp: [], special: [] },
         detailedPrizes: [],
         rules: [""],
         faq: [],

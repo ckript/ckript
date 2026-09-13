@@ -13,7 +13,10 @@ export const REWARD_LABELS = {
   badge_runner_up: "Runner-Up badge",
   badge_special: "Special award badge",
   badge_participant: "Participant badge",
+  badge_second_runner_up: "Second Runner-Up badge",
   featured_script: "Featured script",
+  ai_trailer: "AI trailer",
+  cash_prize: "Cash prize, paid directly by Ckript",
   notified: null,   // internal bookkeeping — deliberately never shown
 };
 

@@ -1,0 +1,2055 @@
+/*
+ * Ckript Mobile — the profile desk (prefix: ckm-desk)
+ * ------------------------------------------------------------------
+ * Transcribed from "Ckript Profile States.dc.html" — 2a Writer · Slate,
+ * 2b Producer · Deal desk, 2c Writer · own profile, 2d Producer · own profile.
+ * One stylesheet for all four, because the prototype is explicit that they are
+ * one screen with four fillings: identical bar, identical identity block,
+ * identical stat strip, identical segmented control, identical docked action.
+ *
+ * FONTS. Baskervville (display) over PT Serif (prose) with Helvetica/system
+ * sans for labels and controls, and a monospace for the small technical
+ * captions — the pair the Shelf landing already uses, loaded globally in
+ * index.html. Numbers in the stat strip are tabular so a follower count does
+ * not jitter when it changes.
+ *
+ * WHY THE BAR IS NOT MobileShell's appBar. The prototype's bar is glass with
+ * the body scrolling *under* it. The shell's app-bar slot is in layout flow, so
+ * nothing can pass beneath it. The bar here is `position: sticky` at the top of
+ * the shell's own scroll surface — the same arrangement AuthSurface uses, and
+ * still ONE scroll surface per screen (§8.1).
+ *
+ * Scoped under `.ckm` (plan §7.1); one registered prefix, `ckm-desk` (§7.2).
+ */
+
+/*
+ * The palette is declared on every root the family paints into, not just on the
+ * page. The sheets and the portrait viewer are handed to MobileShell's
+ * `overlays` slot, which is a SIBLING of the scroll surface — a custom property
+ * inherited from `.ckm-desk` never reaches them, and `background: var(--ckd-bg)`
+ * on an element that cannot see the token computes to nothing at all, which is
+ * a transparent sheet you can read the page through.
+ */
+.ckm .ckm-desk,
+.ckm .ckm-desk__sheet,
+.ckm .ckm-desk__viewer,
+.ckm .ckm-desk__editor {
+  --ckd-bg: #f2f2f3;
+  --ckd-surface: #ffffff;
+  --ckd-surface-hover: #fafafa;
+  --ckd-ink: #0b0a06;
+  --ckd-ink-2: #3e3e42;
+  --ckd-ink-3: #56565a;
+  --ckd-muted: #6d6d72;
+  --ckd-faint: #95959a;
+  --ckd-faintest: #c4c4c9;
+  --ckd-line: #eaeaec;
+  --ckd-hairline: rgba(11, 10, 6, 0.08);
+  --ckd-fill: rgba(11, 10, 6, 0.07);
+  --ckd-fill-soft: rgba(11, 10, 6, 0.05);
+  --ckd-fill-strong: rgba(11, 10, 6, 0.12);
+
+  --ckd-accent: #d14d37;
+  --ckd-accent-ink: #b03a22;
+  --ckd-accent-soft: #e6947f;
+  --ckd-accent-tint: rgba(209, 77, 55, 0.1);
+
+  --ckd-go: #3f8f5b;
+  --ckd-go-ink: #2f6e46;
+  --ckd-go-tint: rgba(63, 143, 91, 0.12);
+
+  --ckd-stop: #c0392b;
+  --ckd-stop-ink: #8e2a1e;
+  --ckd-stop-body: #a5443a;
+  --ckd-stop-tint: rgba(192, 57, 43, 0.08);
+  --ckd-stop-line: rgba(192, 57, 43, 0.24);
+
+  --ckd-gutter: 16px;
+  --ckd-shadow: 0 1px 3px rgba(11, 10, 6, 0.06);
+  --ckd-shadow-lift: 0 6px 18px -6px rgba(11, 10, 6, 0.24);
+
+  --ckd-display: Baskervville, Georgia, "Times New Roman", serif;
+  --ckd-prose: "PT Serif", Georgia, serif;
+  --ckd-ui: "Helvetica Neue", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  --ckd-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* The name is 27px for a writer and 25px for an industry profile in every
+     one of the four screens; it is a variable rather than a modifier on the
+     heading so the caller sets it once, on the surface. */
+  --ckd-name: 27px;
+
+  /* The docked action floats over the scroll; the panels owe it clearance.
+     Zero when a screen has no primary ask — the panel then only owes the home
+     indicator, which the shell already pays for. */
+  --ckd-dock: 0px;
+}
+
+.ckm .ckm-desk {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  background: var(--ckd-bg);
+  color: var(--ckd-ink);
+  font-family: var(--ckd-ui);
+}
+
+.ckm .ckm-desk--industry {
+  --ckd-name: 25px;
+}
+
+.ckm .ckm-desk--docked {
+  --ckd-dock: 82px;
+}
+
+/* The shell's scroll surface wears the desk's ground so the rubber-band
+   overscroll at either end is not page-white against a grey page. */
+.ckm .ckm-desk__scroll {
+  background: var(--ckd-bg);
+}
+
+/* --- Motion -------------------------------------------------------------
+   base.css already flattens every animation under prefers-reduced-motion. */
+@keyframes ckm-desk-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ckm-desk-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ckm-desk-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes ckm-desk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- The bar ------------------------------------------------------------ */
+
+.ckm .ckm-desk__bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--ckm-z-sticky);
+  padding-top: var(--ckm-safe-top);
+  background: rgba(242, 242, 243, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--ckd-hairline);
+}
+
+.ckm .ckm-desk__bar-row {
+  display: flex;
+  height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+/* The owner's bar is a root title, not a pushed one: no chevron, so the title
+   sits against the leading gutter instead of centred between two controls. */
+.ckm .ckm-desk__bar-row--own {
+  padding: 0 14px;
+}
+
+.ckm .ckm-desk__back {
+  display: flex;
+  height: 44px;
+  min-width: 0;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--ckd-ink);
+  font: 400 17px/1 var(--ckd-ui);
+  text-decoration: none;
+  transition: opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__back .material-symbols-outlined {
+  margin-left: -2px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__back-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ckm .ckm-desk__bar-title {
+  overflow: hidden;
+  color: var(--ckd-ink);
+  font: 400 15px/1 var(--ckd-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ckm .ckm-desk__bar-row--own .ckm-desk__bar-title {
+  flex: 1;
+  font-size: 17px;
+  text-align: start;
+}
+
+.ckm .ckm-desk__bar-icon {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--ckd-ink);
+  transition: opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__bar-icon .material-symbols-outlined {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__bar-action {
+  display: flex;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  padding: 0 2px;
+  color: var(--ckd-accent);
+  font: 400 17px/1 var(--ckd-ui);
+  text-decoration: none;
+  transition: opacity 0.12s ease;
+}
+
+/* A bar slot that holds nothing still holds its width, so the title stays
+   optically centred whether or not the screen has a trailing action. */
+.ckm .ckm-desk__bar-spacer {
+  width: 44px;
+  flex: none;
+}
+
+.ckm .ckm-desk__back:active,
+.ckm .ckm-desk__bar-icon:active,
+.ckm .ckm-desk__bar-action:active {
+  opacity: 0.4;
+}
+
+/* --- Banners ------------------------------------------------------------ */
+
+.ckm .ckm-desk__banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 12px var(--ckd-gutter) 0;
+  padding: 13px 14px;
+  border: 1px solid var(--ckd-hairline);
+  border-radius: 14px;
+  background: var(--ckd-fill-soft);
+  animation: ckm-desk-pop 0.2s ease both;
+}
+
+.ckm .ckm-desk__banner--error {
+  border-color: var(--ckd-stop-line);
+  background: var(--ckd-stop-tint);
+}
+
+.ckm .ckm-desk__banner--accent {
+  border-color: rgba(209, 77, 55, 0.24);
+  background: rgba(209, 77, 55, 0.08);
+}
+
+.ckm .ckm-desk__banner-icon {
+  flex: none;
+  color: var(--ckd-ink-3);
+  font-size: 19px;
+  line-height: 20px;
+}
+
+.ckm .ckm-desk__banner--error .ckm-desk__banner-icon {
+  color: var(--ckd-stop);
+}
+
+.ckm .ckm-desk__banner--accent .ckm-desk__banner-icon {
+  color: var(--ckd-accent-ink);
+}
+
+.ckm .ckm-desk__banner-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ckm .ckm-desk__banner-title {
+  color: var(--ckd-ink);
+  font: 500 13.5px/19px var(--ckd-ui);
+}
+
+.ckm .ckm-desk__banner-body {
+  color: var(--ckd-ink-3);
+  font: 400 12.5px/18px var(--ckd-prose);
+}
+
+.ckm .ckm-desk__banner--error .ckm-desk__banner-title,
+.ckm .ckm-desk__banner--accent .ckm-desk__banner-title {
+  color: var(--ckd-stop-ink);
+}
+
+.ckm .ckm-desk__banner--error .ckm-desk__banner-body,
+.ckm .ckm-desk__banner--accent .ckm-desk__banner-body {
+  color: var(--ckd-stop-body);
+}
+
+.ckm .ckm-desk__banner-action {
+  display: flex;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 15px;
+  background: var(--ckd-ink);
+  color: #ffffff;
+  font: 500 12.5px/1 var(--ckd-ui);
+  text-decoration: none;
+  transition: opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__banner--error .ckm-desk__banner-action {
+  background: var(--ckd-stop);
+}
+
+.ckm .ckm-desk__banner-action:active {
+  opacity: 0.7;
+}
+
+/* --- Identity ----------------------------------------------------------- */
+
+.ckm .ckm-desk__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 18px var(--ckd-gutter) 0;
+}
+
+.ckm .ckm-desk__portrait {
+  position: relative;
+  display: block;
+  width: 82px;
+  height: 82px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 41px;
+  background: repeating-linear-gradient(45deg, #e2e2e5 0 8px, #d8d8dc 8px 16px);
+  box-shadow: 0 2px 10px -2px rgba(11, 10, 6, 0.18);
+  transition: transform 0.12s ease;
+}
+
+.ckm .ckm-desk__portrait img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 41px;
+  object-fit: cover;
+}
+
+/* The letter stands in only when there is no photograph; it is the same
+   circle, so the row's geometry never changes with the data. */
+.ckm .ckm-desk__portrait-initial {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  border-radius: 41px;
+  background: var(--ckd-surface);
+  color: var(--ckd-ink);
+  font: 400 32px/1 var(--ckd-display);
+  place-items: center;
+}
+
+.ckm .ckm-desk__portrait:active {
+  transform: scale(0.97);
+}
+
+.ckm .ckm-desk__portrait-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ckd-bg);
+  border-radius: 14px;
+  background: var(--ckd-ink);
+  color: #ffffff;
+}
+
+.ckm .ckm-desk__portrait-badge .material-symbols-outlined {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__who {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 5px;
+}
+
+.ckm .ckm-desk__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ckm .ckm-desk__name {
+  min-width: 0;
+  margin: 0;
+  color: var(--ckd-ink);
+  font: 400 var(--ckd-name) / 1.05 var(--ckd-display);
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__verified {
+  flex: none;
+  color: var(--ckd-accent);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__role {
+  color: var(--ckd-ink-3);
+  font: 400 13.5px/19px var(--ckd-ui);
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 7px;
+  padding-top: 1px;
+}
+
+.ckm .ckm-desk__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--ckd-faintest);
+}
+
+.ckm .ckm-desk__dot--on {
+  background: var(--ckd-go);
+}
+
+.ckm .ckm-desk__status-label {
+  color: var(--ckd-faint);
+  font: 500 12px/1 var(--ckd-ui);
+  white-space: nowrap;
+}
+
+.ckm .ckm-desk__status-label--on {
+  color: var(--ckd-go);
+}
+
+.ckm .ckm-desk__handle {
+  overflow: hidden;
+  color: var(--ckd-faint);
+  font: 400 11.5px/1 var(--ckd-mono);
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- The action row ----------------------------------------------------- */
+
+.ckm .ckm-desk__actions {
+  display: flex;
+  gap: 9px;
+  padding: 17px var(--ckd-gutter) 0;
+}
+
+.ckm .ckm-desk__act {
+  display: flex;
+  height: 44px;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--ckd-fill);
+  color: var(--ckd-ink);
+  font: 500 15px/1 var(--ckd-ui);
+  text-decoration: none;
+  transition: opacity 0.12s ease, background 0.16s ease;
+}
+
+.ckm .ckm-desk__act .material-symbols-outlined {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__act--solid {
+  background: var(--ckd-ink);
+  color: #ffffff;
+}
+
+.ckm .ckm-desk__act--icon {
+  width: 44px;
+  flex: none;
+  padding: 0;
+}
+
+.ckm .ckm-desk__act--icon .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.ckm .ckm-desk__act:active {
+  opacity: 0.62;
+}
+
+.ckm .ckm-desk__act[disabled] {
+  color: var(--ckd-faint);
+  opacity: 1;
+}
+
+/* --- The stat strip ----------------------------------------------------- */
+
+.ckm .ckm-desk__stats {
+  display: flex;
+  width: calc(100% - (var(--ckd-gutter) * 2));
+  margin: 18px var(--ckd-gutter) 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+  text-align: inherit;
+  transition: background 0.16s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__stats--tappable:active {
+  opacity: 0.7;
+}
+
+.ckm .ckm-desk__stat {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 15px 0 16px;
+}
+
+.ckm .ckm-desk__stat-value {
+  color: var(--ckd-ink);
+  font: 400 22px/1 var(--ckd-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckm .ckm-desk__stat--accent .ckm-desk__stat-value {
+  color: var(--ckd-accent);
+}
+
+.ckm .ckm-desk__stat-label {
+  color: var(--ckd-faint);
+  font: 600 9px/12px var(--ckd-ui);
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.ckm .ckm-desk__stat-rule {
+  width: 1px;
+  flex: none;
+  margin: 12px 0;
+  background: var(--ckd-line);
+}
+
+/* --- Owner cards: visibility switch, completion -------------------------- */
+
+.ckm .ckm-desk__card {
+  display: flex;
+  width: calc(100% - (var(--ckd-gutter) * 2));
+  align-items: center;
+  gap: 12px;
+  margin: 18px var(--ckd-gutter) 0;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+  text-align: start;
+}
+
+.ckm .ckm-desk__card + .ckm-desk__card {
+  margin-top: 10px;
+}
+
+.ckm .ckm-desk__card-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ckm .ckm-desk__card-lead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ckm .ckm-desk__card-note {
+  color: var(--ckd-faint);
+  font: 400 12px/17px var(--ckd-prose);
+}
+
+.ckm .ckm-desk__switch {
+  display: flex;
+  width: 51px;
+  height: 31px;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ckd-fill-strong);
+  transition: background 0.2s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__switch[aria-checked="true"] {
+  justify-content: flex-end;
+  background: var(--ckd-go);
+}
+
+.ckm .ckm-desk__switch:active {
+  opacity: 0.8;
+}
+
+.ckm .ckm-desk__switch[disabled] {
+  opacity: 0.55;
+}
+
+.ckm .ckm-desk__switch-knob {
+  display: block;
+  width: 27px;
+  height: 27px;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(11, 10, 6, 0.28);
+}
+
+.ckm .ckm-desk__progress {
+  display: flex;
+  width: calc(100% - (var(--ckd-gutter) * 2));
+  flex-direction: column;
+  gap: 9px;
+  margin: 12px var(--ckd-gutter) 0;
+  padding: 15px 16px 17px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+  text-align: start;
+  transition: background 0.16s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__progress:active {
+  opacity: 0.7;
+}
+
+.ckm .ckm-desk__progress-row {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ckm .ckm-desk__progress-label {
+  color: var(--ckd-ink);
+  font: 500 13.5px/1 var(--ckd-ui);
+}
+
+.ckm .ckm-desk__progress-cta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--ckd-accent);
+  font: 400 12.5px/1 var(--ckd-ui);
+}
+
+.ckm .ckm-desk__progress-cta .material-symbols-outlined {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__meter {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(11, 10, 6, 0.1);
+}
+
+.ckm .ckm-desk__meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ckd-accent);
+  transition: width 0.3s ease;
+}
+
+.ckm .ckm-desk__meter-fill--full {
+  background: var(--ckd-stop);
+}
+
+/* --- The segmented control ---------------------------------------------- */
+
+/*
+ * Three tabs for a visitor, four for an owner. `flex: 1 0 auto` is the
+ * difference that matters: the tabs fill the bar when there is room and keep
+ * their full label when there is not, scrolling sideways instead of squashing
+ * "Requests" into "Requ…". A truncated tab label is a tab you cannot read.
+ */
+.ckm .ckm-desk__tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 2px;
+  margin: 18px var(--ckd-gutter) 0;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--ckd-fill);
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.ckm .ckm-desk__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ckm .ckm-desk__tab {
+  display: flex;
+  height: 32px;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ckd-muted);
+  font: 400 13px/1 var(--ckd-ui);
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.ckm .ckm-desk__tab[aria-selected="true"] {
+  background: var(--ckd-surface);
+  color: var(--ckd-ink);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(11, 10, 6, 0.16);
+}
+
+.ckm .ckm-desk__tab-count {
+  display: inline-flex;
+  min-width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ckd-accent-tint);
+  color: var(--ckd-accent-ink);
+  font: 600 9.5px/1 var(--ckd-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Panels ------------------------------------------------------------- */
+
+.ckm .ckm-desk__panel {
+  padding: 18px var(--ckd-gutter) calc(var(--ckd-dock) + 34px);
+  animation: ckm-desk-fade 0.24s ease both;
+}
+
+.ckm .ckm-desk__panel--rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ckm .ckm-desk__prose {
+  margin: 0 4px 18px;
+  color: var(--ckd-ink-2);
+  font: 400 15px/24px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__footnote {
+  margin: 12px 4px 0;
+  color: var(--ckd-faint);
+  font: 400 12.5px/19px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__label {
+  display: block;
+  padding: 26px 0 10px;
+  color: var(--ckd-faint);
+  font: 600 9.5px/12px var(--ckd-ui);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.ckm .ckm-desk__label--first {
+  padding-top: 4px;
+}
+
+/* --- The list card ------------------------------------------------------ */
+
+.ckm .ckm-desk__list {
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+}
+
+.ckm .ckm-desk__list--tall {
+  border-radius: 18px;
+}
+
+.ckm .ckm-desk__row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 0;
+  background: var(--ckd-surface);
+  color: inherit;
+  text-align: start;
+  text-decoration: none;
+  transition: background 0.16s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__row + .ckm-desk__row {
+  border-top: 1px solid var(--ckd-line);
+}
+
+.ckm .ckm-desk__row--tappable:active {
+  opacity: 0.6;
+}
+
+.ckm .ckm-desk__row-key {
+  flex: none;
+  color: var(--ckd-ink-3);
+  font: 400 15px/21px var(--ckd-ui);
+}
+
+.ckm .ckm-desk__row-value {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--ckd-ink);
+  font: 500 15px/21px var(--ckd-ui);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__chevron {
+  flex: none;
+  color: var(--ckd-faintest);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__row-score {
+  flex: none;
+  color: var(--ckd-accent);
+  font: 400 15px/1 var(--ckd-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckm .ckm-desk__row-pill {
+  flex: none;
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: var(--ckd-fill);
+  color: var(--ckd-ink-2);
+  font: 600 9px/1 var(--ckd-ui);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ckm .ckm-desk__row-pill--accent {
+  background: var(--ckd-accent-tint);
+  color: var(--ckd-accent-ink);
+}
+
+.ckm .ckm-desk__row-pill--mute {
+  background: var(--ckd-fill-soft);
+  color: var(--ckd-faint);
+}
+
+/* A row whose payload is a stacked title + caption rather than a key/value
+   pair — the pipeline, roster and manage rows all share it. */
+.ckm .ckm-desk__row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ckm .ckm-desk__row-title-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ckm .ckm-desk__row-title {
+  color: var(--ckd-ink);
+  font: 400 17px/21px var(--ckd-display);
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__row-meta {
+  color: var(--ckd-faint);
+  font: 400 12px/17px var(--ckd-ui);
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__row-link {
+  overflow: hidden;
+  color: var(--ckd-ink);
+  font: 500 15px/21px var(--ckd-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Chips -------------------------------------------------------------- */
+
+.ckm .ckm-desk__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 16px 2px 0;
+}
+
+.ckm .ckm-desk__chip {
+  padding: 8px 13px;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  color: var(--ckd-ink-2);
+  font: 400 12.5px/1 var(--ckd-ui);
+}
+
+/* --- Project cards ------------------------------------------------------ */
+
+.ckm .ckm-desk__lead {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  margin-bottom: 12px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+  text-align: start;
+  transition: box-shadow 0.16s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__lead:active {
+  opacity: 0.78;
+}
+
+.ckm .ckm-desk__frame {
+  position: relative;
+  display: block;
+  height: 186px;
+  background: repeating-linear-gradient(45deg, #ececee 0 9px, #e2e2e5 9px 18px);
+}
+
+.ckm .ckm-desk__frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: saturate(0.66) contrast(1.1);
+  object-fit: cover;
+}
+
+.ckm .ckm-desk__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 10, 6, 0.06) 38%, rgba(11, 10, 6, 0.84));
+}
+
+.ckm .ckm-desk__flag {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: var(--ckd-accent);
+  color: #ffffff;
+  font: 600 9px/1 var(--ckd-ui);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.ckm .ckm-desk__caption {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ckm .ckm-desk__caption-title {
+  color: #ffffff;
+  font: 400 25px/27px var(--ckd-display);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__caption-meta {
+  color: rgba(255, 255, 255, 0.66);
+  font: 400 11px/1 var(--ckd-mono);
+  letter-spacing: 0.07em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ckm .ckm-desk__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ckm .ckm-desk__tile {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+  text-align: start;
+  text-decoration: none;
+  transition: box-shadow 0.16s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__tile:active {
+  opacity: 0.75;
+}
+
+.ckm .ckm-desk__tile-frame {
+  position: relative;
+  display: block;
+  height: 142px;
+  background: repeating-linear-gradient(45deg, #ececee 0 9px, #e2e2e5 9px 18px);
+}
+
+.ckm .ckm-desk__tile-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: saturate(0.7) contrast(1.06);
+  object-fit: cover;
+}
+
+/* The genre stands in for a still when a project has no cover art, set in the
+   display face so an image-less grid still reads as a shelf rather than a hole. */
+.ckm .ckm-desk__tile-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 12px;
+  color: var(--ckd-faintest);
+  font: 400 17px/22px var(--ckd-display);
+  place-items: center;
+  text-align: center;
+}
+
+.ckm .ckm-desk__tile-badge {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  padding: 4px 7px;
+  border-radius: 11px;
+  background: rgba(11, 10, 6, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  font: 500 11px/1 var(--ckd-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckm .ckm-desk__tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 12px 14px;
+}
+
+.ckm .ckm-desk__tile-title {
+  color: var(--ckd-ink);
+  font: 400 16px/19px var(--ckd-display);
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__tile-meta {
+  color: var(--ckd-faint);
+  font: 600 9px/12px var(--ckd-ui);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* --- Empty, loading and failure ----------------------------------------- */
+
+.ckm .ckm-desk__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 44px 34px calc(var(--ckd-dock) + 34px);
+  text-align: center;
+  animation: ckm-desk-fade 0.24s ease both;
+}
+
+.ckm .ckm-desk__empty-icon {
+  display: flex;
+  width: 62px;
+  height: 62px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 31px;
+  background: var(--ckd-fill-soft);
+  color: var(--ckd-faint);
+  font-size: 27px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__empty-title {
+  margin: 0;
+  color: var(--ckd-ink);
+  font: 400 21px/26px var(--ckd-display);
+}
+
+.ckm .ckm-desk__empty-body {
+  margin: 0;
+  color: var(--ckd-muted);
+  font: 400 14px/22px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__empty-action {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--ckd-ink);
+  color: #ffffff;
+  font: 500 14px/1 var(--ckd-ui);
+  text-decoration: none;
+  transition: opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__empty-action--quiet {
+  background: var(--ckd-fill);
+  color: var(--ckd-ink);
+}
+
+.ckm .ckm-desk__empty-action:active {
+  opacity: 0.7;
+}
+
+.ckm .ckm-desk__loading {
+  padding: 20px var(--ckd-gutter) calc(var(--ckd-dock) + 34px);
+  animation: ckm-desk-fade 0.2s ease both;
+}
+
+.ckm .ckm-desk__bone {
+  border-radius: 16px;
+  background: #e4e4e7;
+  animation: ckm-desk-pulse 1.4s ease-in-out infinite;
+}
+
+.ckm .ckm-desk__bone + .ckm-desk__bone {
+  margin-top: 12px;
+}
+
+.ckm .ckm-desk__bone--lead {
+  height: 186px;
+  border-radius: 18px;
+}
+
+.ckm .ckm-desk__bone--row {
+  height: 64px;
+}
+
+.ckm .ckm-desk__bone--card {
+  height: 150px;
+  border-radius: 18px;
+}
+
+.ckm .ckm-desk__bones-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ckm .ckm-desk__bones-grid .ckm-desk__bone {
+  height: 196px;
+  margin-top: 0;
+}
+
+.ckm .ckm-desk__spinner-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 22px 0 0;
+  color: var(--ckd-faint);
+  font: 400 12.5px/1 var(--ckd-ui);
+}
+
+.ckm .ckm-desk__spinner {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border: 2px solid rgba(11, 10, 6, 0.16);
+  border-top-color: var(--ckd-ink);
+  border-radius: 8px;
+  animation: ckm-desk-spin 0.8s linear infinite;
+}
+
+.ckm .ckm-desk__spinner--onDark {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+}
+
+/* The whole-screen refusals: private, blocked, restricted, not found. */
+.ckm .ckm-desk__state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  padding: 60px 34px 80px;
+  text-align: center;
+}
+
+.ckm .ckm-desk__state-icon {
+  display: flex;
+  width: 66px;
+  height: 66px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 33px;
+  background: var(--ckd-fill-soft);
+  color: var(--ckd-faint);
+  font-size: 29px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__state-title {
+  margin: 0;
+  color: var(--ckd-ink);
+  font: 400 25px/29px var(--ckd-display);
+  text-wrap: balance;
+}
+
+.ckm .ckm-desk__state-body {
+  margin: 0;
+  color: var(--ckd-muted);
+  font: 400 14px/22px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__state-actions {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* --- The dock ----------------------------------------------------------- */
+
+.ckm .ckm-desk__dock {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--ckm-z-raised);
+  margin-top: auto;
+  padding: 12px var(--ckd-gutter) calc(14px + var(--ckm-safe-bottom));
+  background: linear-gradient(180deg, rgba(242, 242, 243, 0), rgba(242, 242, 243, 0.95) 42%);
+}
+
+.ckm .ckm-desk__cta {
+  display: flex;
+  width: 100%;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 26px;
+  background: var(--ckd-ink);
+  color: #ffffff;
+  font: 500 16.5px/1 var(--ckd-ui);
+  text-decoration: none;
+  transition: transform 0.12s ease, opacity 0.12s ease, background 0.18s ease;
+}
+
+.ckm .ckm-desk__cta .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__cta--accent {
+  background: var(--ckd-accent);
+}
+
+.ckm .ckm-desk__cta--quiet {
+  background: var(--ckd-fill);
+  color: var(--ckd-muted);
+}
+
+.ckm .ckm-desk__cta--done {
+  background: var(--ckd-go-tint);
+  color: var(--ckd-go-ink);
+}
+
+.ckm .ckm-desk__cta[disabled] {
+  background: var(--ckd-fill-strong);
+  color: var(--ckd-faint);
+}
+
+.ckm .ckm-desk__cta:active:not([disabled]) {
+  opacity: 0.74;
+  transform: scale(0.98);
+}
+
+/* --- The portrait viewer ------------------------------------------------- */
+
+.ckm .ckm-desk__viewer {
+  position: absolute;
+  inset: 0;
+  z-index: var(--ckm-z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: #08070a;
+  animation: ckm-desk-fade 0.24s ease both;
+}
+
+.ckm .ckm-desk__viewer img {
+  width: 100%;
+  animation: ckm-desk-pop 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+  object-fit: cover;
+}
+
+.ckm .ckm-desk__viewer-close {
+  position: absolute;
+  top: calc(18px + var(--ckm-safe-top));
+  right: 16px;
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
+}
+
+.ckm .ckm-desk__viewer-close .material-symbols-outlined {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__viewer-caption {
+  position: absolute;
+  right: 0;
+  bottom: calc(28px + var(--ckm-safe-bottom));
+  left: 0;
+  color: rgba(255, 255, 255, 0.5);
+  font: 400 12px/1 var(--ckd-mono);
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+
+/* --- Sheets --------------------------------------------------------------
+   The shared Sheet keeps its focus trap, flick-to-dismiss and keyboard inset;
+   only its surface is re-shaped to the prototype. Doubling the class is what
+   carries the override past `.ckm .ckm-overlay--bottom .ckm-overlay__surface`,
+   whose (0,3,0) would otherwise win on source order alone. */
+.ckm .ckm-desk__sheet.ckm-desk__sheet {
+  border-radius: 22px 22px 0 0;
+  background: var(--ckd-bg);
+  box-shadow: 0 -24px 60px -14px rgba(0, 0, 0, 0.4);
+  font-family: var(--ckd-ui);
+}
+
+.ckm .ckm-desk__sheet .ckm-bottom-sheet__title {
+  color: var(--ckd-ink);
+  font: 400 22px/26px var(--ckd-display);
+  letter-spacing: 0;
+}
+
+.ckm .ckm-desk__sheet .ckm-bottom-sheet__description {
+  color: var(--ckd-ink-3);
+  font: 400 14px/22px var(--ckd-prose);
+}
+
+.ckm .ckm-desk__sheet .ckm-bottom-sheet__footer {
+  border-top: 0;
+  background: transparent;
+}
+
+.ckm .ckm-desk__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 12px;
+  color: var(--ckd-faint);
+  font: 600 10px/13px var(--ckd-ui);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.ckm .ckm-desk__diamond {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  background: var(--ckd-accent);
+  transform: rotate(45deg);
+}
+
+.ckm .ckm-desk__sheet-note {
+  margin: 0 0 4px;
+  color: var(--ckd-ink-3);
+  font: 400 14px/22px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__quota {
+  margin: 14px 0 0;
+  padding: 14px 15px;
+  border-radius: 14px;
+  background: var(--ckd-surface);
+}
+
+.ckm .ckm-desk__quota-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ckm .ckm-desk__quota-key {
+  color: var(--ckd-ink-3);
+  font: 400 12.5px/1 var(--ckd-ui);
+}
+
+.ckm .ckm-desk__quota-value {
+  color: var(--ckd-ink);
+  font: 500 12.5px/1 var(--ckd-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckm .ckm-desk__quota .ckm-desk__meter {
+  margin: 9px 0 8px;
+}
+
+.ckm .ckm-desk__quota-note {
+  color: var(--ckd-faint);
+  font: 400 11px/1 var(--ckd-ui);
+}
+
+.ckm .ckm-desk__compose {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  padding: 13px 14px;
+  border: 1px solid rgba(11, 10, 6, 0.12);
+  border-radius: 14px;
+  background: var(--ckd-surface);
+  color: var(--ckd-ink);
+  font: 400 15px/22px var(--ckd-prose);
+  resize: none;
+}
+
+.ckm .ckm-desk__compose:focus {
+  border-color: var(--ckd-ink);
+  box-shadow: 0 0 0 3px rgba(11, 10, 6, 0.07);
+  outline: none;
+}
+
+.ckm .ckm-desk__compose--invalid {
+  border-color: var(--ckd-stop);
+}
+
+.ckm .ckm-desk__compose-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 2px 0;
+}
+
+.ckm .ckm-desk__hint {
+  color: var(--ckd-faint);
+  font: 400 12px/17px var(--ckd-ui);
+}
+
+.ckm .ckm-desk__hint--invalid {
+  color: var(--ckd-stop);
+}
+
+.ckm .ckm-desk__count {
+  flex: none;
+  color: var(--ckd-faint);
+  font: 400 11.5px/1 var(--ckd-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckm .ckm-desk__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 14px;
+}
+
+.ckm .ckm-desk__pick {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid rgba(11, 10, 6, 0.12);
+  border-radius: 14px;
+  background: var(--ckd-surface);
+  color: var(--ckd-ink);
+  font: 400 15px/21px var(--ckd-ui);
+  text-align: start;
+  transition: border-color 0.16s ease, opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__pick[aria-pressed="true"] {
+  border-color: var(--ckd-ink);
+}
+
+.ckm .ckm-desk__pick .material-symbols-outlined {
+  flex: none;
+  color: var(--ckd-accent);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0 0;
+  text-align: center;
+}
+
+.ckm .ckm-desk__done-icon {
+  display: flex;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 28px;
+  background: var(--ckd-go-tint);
+  color: var(--ckd-go);
+  font-size: 27px;
+  line-height: 1;
+  animation: ckm-desk-pop 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.ckm .ckm-desk__done-title {
+  margin: 14px 0 0;
+  color: var(--ckd-ink);
+  font: 400 25px/29px var(--ckd-display);
+}
+
+.ckm .ckm-desk__done-body {
+  max-width: 290px;
+  margin: 9px 0 0;
+  color: var(--ckd-ink-3);
+  font: 400 14px/22px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__contact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.ckm .ckm-desk__contact a {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 15px;
+  border-radius: 14px;
+  background: var(--ckd-surface);
+  color: var(--ckd-ink);
+  font: 500 15px/21px var(--ckd-ui);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__contact a .material-symbols-outlined {
+  flex: none;
+  color: var(--ckd-faintest);
+  font-size: 18px;
+}
+
+/* --- Narrow phones ------------------------------------------------------- */
+
+@media (max-width: 350px) {
+  .ckm .ckm-desk {
+    --ckd-gutter: 12px;
+    --ckd-name: 23px;
+  }
+
+  .ckm .ckm-desk--industry {
+    --ckd-name: 22px;
+  }
+
+  .ckm .ckm-desk__portrait,
+  .ckm .ckm-desk__portrait img,
+  .ckm .ckm-desk__portrait-initial {
+    width: 68px;
+    height: 68px;
+    border-radius: 34px;
+  }
+
+  .ckm .ckm-desk__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- The editor dialog ---------------------------------------------------
+   The one complete profile form the product has — identity, photograph,
+   location, writer or professional detail — kept whole and simply re-housed.
+   The prototype edits a field at a time from tappable About rows; those rows
+   open THIS, rather than a second validator that could drift from the first. */
+
+.ckm .ckm-desk__editor-form {
+  display: grid;
+  gap: var(--ckm-space-5);
+}
+
+.ckm .ckm-desk__editor-form section {
+  display: grid;
+  gap: var(--ckm-space-4);
+}
+
+.ckm .ckm-desk__editor-form h3 {
+  margin: 0 0 var(--ckm-space-3);
+  padding-bottom: var(--ckm-space-2);
+  border-bottom: 1px solid var(--ckm-line);
+  color: var(--ckm-text);
+  font: var(--ckm-weight-bold) var(--ckm-text-section) / var(--ckm-leading-section) var(--ckm-display);
+}
+
+.ckm .ckm-desk__editor-photo-row {
+  display: grid;
+  align-items: start;
+  gap: var(--ckm-space-3);
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+
+.ckm .ckm-desk__editor-photo {
+  display: grid;
+  overflow: hidden;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--ckm-line);
+  border-radius: var(--ckm-r-lg);
+  background: var(--ckm-bg-soft);
+  color: var(--ckm-text);
+  font: var(--ckm-weight-bold) var(--ckm-text-title) / 1 var(--ckm-display);
+  place-items: center;
+}
+
+.ckm .ckm-desk__editor-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ckm .ckm-desk__editor-photo-row > div:last-child {
+  display: grid;
+  gap: var(--ckm-space-2);
+}
+
+.ckm .ckm-desk__editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ckm-space-3);
+}
+
+@media (max-width: 350px) {
+  .ckm .ckm-desk__editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- The owner's script rows ---------------------------------------------
+   Two controls in one row: opening the project, and the overflow that can
+   delete it. A <button> inside an <a> is invalid markup and untappable on
+   iOS, so the row is the container and neither control wraps the other. */
+
+.ckm .ckm-desk__row--split {
+  gap: 0;
+  padding: 0;
+}
+
+.ckm .ckm-desk__row-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 4px 14px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  text-decoration: none;
+  transition: opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__row-open:active {
+  opacity: 0.6;
+}
+
+.ckm .ckm-desk__row-more {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--ckd-faint);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.ckm .ckm-desk__row-more .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__row-more:active {
+  background: var(--ckd-fill-soft);
+  color: var(--ckd-ink);
+}
+
+/* Status tones for the publication pill, borrowed from describeProjectStatus
+   so the owner's row and the project page cannot disagree about a word. */
+.ckm .ckm-desk__row-pill--success {
+  background: var(--ckd-go-tint);
+  color: var(--ckd-go-ink);
+}
+
+.ckm .ckm-desk__row-pill--warning {
+  background: rgba(209, 77, 55, 0.1);
+  color: var(--ckd-accent-ink);
+}
+
+.ckm .ckm-desk__row-pill--danger {
+  background: var(--ckd-stop-tint);
+  color: var(--ckd-stop-ink);
+}
+
+/* --- The owner's inbox ---------------------------------------------------- */
+
+.ckm .ckm-desk__ask {
+  padding: 16px 17px 17px;
+  border-radius: 18px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+}
+
+.ckm .ckm-desk__ask-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ckm .ckm-desk__ask-avatar,
+.ckm .ckm-desk__ask-glyph {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 21px;
+  background: var(--ckd-fill-soft);
+  color: var(--ckd-faint);
+  font: 400 18px/1 var(--ckd-display);
+  place-items: center;
+}
+
+.ckm .ckm-desk__ask-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ckm .ckm-desk__ask-glyph .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__ask-who {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ckm .ckm-desk__ask-name,
+.ckm .ckm-desk__ask-name a {
+  color: var(--ckd-ink);
+  font: 400 17px/21px var(--ckd-display);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__ask-detail {
+  color: var(--ckd-faint);
+  font: 400 12.5px/17px var(--ckd-ui);
+  overflow-wrap: anywhere;
+}
+
+.ckm .ckm-desk__ask-when {
+  flex: none;
+  color: var(--ckd-faint);
+  font: 400 11.5px/17px var(--ckd-mono);
+  letter-spacing: 0.04em;
+  text-align: end;
+}
+
+.ckm .ckm-desk__ask-subject {
+  margin: 12px 0 0;
+  color: var(--ckd-ink-2);
+  font: 400 14px/21px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__ask-message {
+  margin: 8px 0 0;
+  color: var(--ckd-ink-3);
+  font: italic 400 13.5px/20px var(--ckd-prose);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-desk__ask-actions {
+  display: flex;
+  gap: 9px;
+  padding: 14px 0 0;
+}
+
+.ckm .ckm-desk__ask-accept,
+.ckm .ckm-desk__ask-decline {
+  display: flex;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 21px;
+  font: 500 14.5px/1 var(--ckd-ui);
+  transition: opacity 0.12s ease, background 0.16s ease;
+}
+
+.ckm .ckm-desk__ask-accept {
+  flex: 1;
+  background: var(--ckd-ink);
+  color: #ffffff;
+}
+
+.ckm .ckm-desk__ask-decline {
+  flex: none;
+  padding: 0 18px;
+  background: var(--ckd-fill);
+  color: var(--ckd-ink);
+}
+
+.ckm .ckm-desk__ask-accept:active,
+.ckm .ckm-desk__ask-decline:active {
+  opacity: 0.65;
+}
+
+.ckm .ckm-desk__ask-accept[disabled],
+.ckm .ckm-desk__ask-decline[disabled] {
+  opacity: 0.5;
+}
+
+.ckm .ckm-desk__ask-outcome {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 0 0;
+  color: var(--ckd-faint);
+  font: 500 13px/1 var(--ckd-ui);
+}
+
+.ckm .ckm-desk__ask-outcome .material-symbols-outlined {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.ckm .ckm-desk__ask-outcome--go {
+  color: var(--ckd-go-ink);
+}
+
+.ckm .ckm-desk__ask-join {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 13px;
+  border-radius: 15px;
+  background: var(--ckd-accent);
+  color: #ffffff;
+  font: 500 12.5px/1 var(--ckd-ui);
+  text-decoration: none;
+}
+
+.ckm .ckm-desk__caught-up {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--ckd-go-tint);
+  color: var(--ckd-go-ink);
+  font: 400 13.5px/19px var(--ckd-ui);
+}
+
+.ckm .ckm-desk__caught-up .material-symbols-outlined {
+  flex: none;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* --- The bio card --------------------------------------------------------- */
+
+.ckm .ckm-desk__bio {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 17px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ckd-surface);
+  box-shadow: var(--ckd-shadow);
+  text-align: start;
+  transition: opacity 0.12s ease;
+}
+
+.ckm .ckm-desk__bio:active {
+  opacity: 0.7;
+}
+
+.ckm .ckm-desk__bio-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ckd-faint);
+  font: 600 9.5px/12px var(--ckd-ui);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.ckm .ckm-desk__bio-edit {
+  color: var(--ckd-accent);
+  font: 400 12.5px/1 var(--ckd-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ckm .ckm-desk__bio-text {
+  color: var(--ckd-ink-2);
+  font: 400 14.5px/23px var(--ckd-prose);
+  text-wrap: pretty;
+}

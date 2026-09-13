@@ -44,13 +44,36 @@ const assignedEntryIds = async (competitionId, judgeId) => {
   return rows.map((row) => row.entry);
 };
 
-const judgeableFilter = async (competitionId, judgeId) => ({
-  competitionId,
-  status: { $in: JUDGEABLE_STATUSES },
-  // The entry is re-scoped by competitionId as well, so an assignment row pointing at another
-  // competition's entry (stale denormalised field, hand-edited data) still cannot widen this.
-  _id: { $in: await assignedEntryIds(competitionId, judgeId) },
-});
+/**
+ * @param {string|undefined} entryId  when reading ONE entry, the id being asked for. The filter then
+ *   pins `_id` to that id — but only if it is assigned; otherwise `_id` becomes a set that matches
+ *   nothing, and the caller's findOne/exists comes back empty exactly as it would for a foreign id.
+ *
+ * WHY THE PIN LIVES HERE AND NOT AT THE CALL SITE. The first version of this returned only the
+ * `$in` set, and every single-entry caller did `{ _id: entryId, ...gate }`. Object spread keeps the
+ * LAST duplicate key, so the gate's `_id: { $in: [...] }` silently replaced the requested id, and
+ * findOne returned the first assigned entry whatever was asked for. Every script in a judge's queue
+ * opened as the same script — and, far worse, saveJudgeScore's exists() check passed for ANY entry
+ * as long as the judge had one assignment, so the gate on writes was gone. The intersection has to
+ * be computed in one place, by the function that knows both sides.
+ */
+const judgeableFilter = async (competitionId, judgeId, entryId) => {
+  const assigned = await assignedEntryIds(competitionId, judgeId);
+  const base = {
+    competitionId,
+    status: { $in: JUDGEABLE_STATUSES },
+  };
+  if (entryId === undefined) {
+    // The queue: everything assigned. Re-scoped by competitionId as well, so an assignment row
+    // pointing at another competition's entry (stale denormalised field, hand-edited data) still
+    // cannot widen this.
+    return { ...base, _id: { $in: assigned } };
+  }
+  const isAssigned = assigned.some((id) => String(id) === String(entryId));
+  // An unassigned id gets a filter that can never match, rather than a thrown error or a 403: to
+  // this judge it must look exactly like an entry that does not exist.
+  return { ...base, _id: isAssigned ? entryId : { $in: [] } };
+};
 
 /**
  * Is the window open for WRITES?
@@ -279,7 +302,7 @@ export const getJudgeEntry = async (req, res) => {
 
     // Always queried by BOTH ids. `findById(entryId)` would let a judge on competition A read an
     // entry from competition B by pasting its id — the assignment gate only checked competition A.
-    const entry = await CompetitionEntry.findOne({ _id: entryId, ...(await judgeableFilter(competitionId, req.user._id)) }).lean();
+    const entry = await CompetitionEntry.findOne(await judgeableFilter(competitionId, req.user._id, entryId)).lean();
     if (!entry) return res.status(404).json({ message: "Entry not found." });
 
     const [score, nominations] = await Promise.all([
@@ -314,7 +337,7 @@ export const saveJudgeScore = async (req, res) => {
     const write = judgingWriteState(competition);
     if (!write.open) return res.status(409).json({ message: write.reason });
 
-    const entryExists = await CompetitionEntry.exists({ _id: entryId, ...(await judgeableFilter(competitionId, req.user._id)) });
+    const entryExists = await CompetitionEntry.exists(await judgeableFilter(competitionId, req.user._id, entryId));
     if (!entryExists) return res.status(404).json({ message: "Entry not found." });
 
     const rubric = rubricView(competition);
@@ -454,7 +477,7 @@ export const saveJudgeNomination = async (req, res) => {
 
     // Re-checked against the competition, so an entry id from a different competition cannot be
     // nominated here even though the judge is legitimately on this panel.
-    const entryExists = await CompetitionEntry.exists({ _id: entryId, ...(await judgeableFilter(competitionId, req.user._id)) });
+    const entryExists = await CompetitionEntry.exists(await judgeableFilter(competitionId, req.user._id, entryId));
     if (!entryExists) return res.status(404).json({ message: "Entry not found." });
 
     const reason = asTrimmedString(req.body?.reason, 500);

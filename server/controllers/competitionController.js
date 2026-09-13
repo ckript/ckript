@@ -9,7 +9,8 @@ import Invoice from "../models/Invoice.js";
 import { issueInvoice, totalRow, gatewayRow } from "../utils/invoiceIssue.js";
 import { recordPayment } from "../utils/ledger.js";
 import User from "../models/User.js";
-import { createNotification, sendEmailNotification } from "../utils/notify.js";
+import { createNotification, resolveClientBaseUrl, sendEmailNotification } from "../utils/notify.js";
+import { buildSubmissionMail } from "../utils/competitionMail.js";
 import { hasProjectCreatorAccess } from "../utils/projectAccess.js";
 import { generateCompetitionCertificate } from "../utils/competitionCertificatePdf.js";
 import {
@@ -19,7 +20,6 @@ import {
   referralWindow,
 } from "../utils/competitionReferrals.js";
 import { countPages } from "../utils/paginate.js";
-import { escapeHtml } from "../utils/escapeHtml.js";
 import { isKnownCountry } from "../utils/countries.js";
 import { classifyText } from "../utils/classify.js";
 import {
@@ -27,6 +27,7 @@ import {
   buildTimeline,
   canSubmitNow,
 } from "../utils/competitionPhase.js";
+import { badgeImageFor, composePrizeLines } from "../utils/competitionRewards.js";
 import {
   COMPETITION_ENTRY_SUMMARY_FIELDS,
   competitionEntrySummary,
@@ -79,9 +80,30 @@ const UNDISCOVERABLE = ["hidden", "private"];
  * while the editor still refused to open until `live`, so the only way to use the head start was to
  * write off-platform. If an admin surface needs the theme early, it must read the ADMIN endpoint.
  */
+/**
+ * The prize lists as the PUBLIC reads them: the platform's grants in words, then the admin's
+ * free-text extras — one list per placing, so no page can promise something the declare flow will
+ * not grant. A special award folds its grants into the description it already prints; its badge
+ * line is dropped there because the title is the badge.
+ */
+const publicPrizes = (competition) => {
+  const composed = composePrizeLines(competition);
+  return {
+    winner: composed.winner,
+    runnerUp: composed.runnerUp,
+    secondRunnerUp: composed.secondRunnerUp,
+    special: composed.special.map((row) => ({
+      title: row.title,
+      description: [row.description, ...row.lines.filter((line) => !line.endsWith(" badge"))].filter(Boolean).join(" · "),
+      badgeUrl: row.badgeUrl || "",
+    })),
+  };
+};
+
 const publicCompetition = (competition, phase) => {
   const obj = typeof competition.toObject === "function" ? competition.toObject() : { ...competition };
   // Theme is now globally visible as requested, regardless of the phase
+  obj.prizes = publicPrizes(competition);
   return obj;
 };
 
@@ -184,13 +206,15 @@ const countScenes = (text = "") => {
 const buildPublicResults = async (competitionId) => {
   const entries = await CompetitionEntry.find({
     competitionId,
-    "result.award": { $in: ["winner", "runner_up", "special"] },
+    "result.award": { $in: ["winner", "runner_up", "second_runner_up", "special"] },
   })
     .populate("userId", "name profileImage writerProfile.username username isPrivate isDeactivated")
     .lean();
 
   // A writer who has since gone private or deleted their account is omitted entirely — the same rule
   // getCompetitionHistory applies. Their placing is not re-assigned to anyone else.
+  // For the badge artwork: the images live on the competition, the award on the entry.
+  const competition = await Competition.findById(competitionId).select("badgeImages prizes.special").lean();
   const visible = entries.filter((e) => e.userId && !e.userId.isPrivate && !e.userId.isDeactivated);
 
   // NOTE: deliberately no scriptId. Competition entries stay private drafts; the Hall of Fame links
@@ -210,11 +234,13 @@ const buildPublicResults = async (competitionId) => {
     synopsis: entry.snapshot?.synopsis || "",
     specialTitle: entry.result?.specialTitle || "",
     rewards: (entry.rewardsGranted || []).map((r) => r.type),
+    badgeImage: badgeImageFor(competition, entry.result?.award, entry.result?.specialTitle),
   });
 
   return {
     winner: visible.filter((e) => e.result.award === "winner").map(shape)[0] || null,
     runnerUp: visible.filter((e) => e.result.award === "runner_up").map(shape)[0] || null,
+    secondRunnerUp: visible.filter((e) => e.result.award === "second_runner_up").map(shape)[0] || null,
     special: visible.filter((e) => e.result.award === "special").map(shape),
   };
 };
@@ -370,6 +396,7 @@ export const getCompletedCompetitions = async (req, res) => {
         resultsDeclaredAt: competition.resultsDeclaredAt,
         winner: results.winner,
         runnerUp: results.runnerUp,
+        secondRunnerUp: results.secondRunnerUp || null,
         // Category winners (Best Dialogue and the like). The Hall of Fame is about the PEOPLE, so
         // it needs every award, not just the top two — omitting these silently erased a whole class
         // of winner from the record.
@@ -436,7 +463,8 @@ export const getHallOfFameEntry = async (req, res) => {
         overview: competition.overview || "",
         dates: competition.dates,
         resultsDeclaredAt: competition.resultsDeclaredAt,
-        prizes: competition.prizes,
+        prizes: publicPrizes(competition),
+        badgeImages: competition.badgeImages || {},
         judges: competition.judges || [],
         sponsors: competition.sponsors || [],
       },
@@ -1257,15 +1285,22 @@ export const submitCompetitionEntry = async (req, res) => {
       type: "competition",
       message: `Submission received for ${competition.name} at ${now.toUTCString()}.`,
     });
+    // The receipt: the script, the entry ID, the exact time and the script's numbers, in the
+    // platform's own document. Everything typed by the writer is escaped inside the builder.
+    const receipt = buildSubmissionMail({
+      competition,
+      entry,
+      writerName: req.user.name,
+      scriptTitle: script.title || "Untitled",
+      submittedAt: now,
+      baseUrl: resolveClientBaseUrl(),
+    });
     sendEmailNotification({
       to: req.user.email,
       subject: `Submission received — ${competition.name}`,
-      // As above: the script title is whatever the writer typed, so it is escaped like everything
-      // else that reaches the HTML body.
-      html: `<p>Hi ${escapeHtml(req.user.name || "there")},</p>
-        <p>Your script <strong>${escapeHtml(script.title || "Untitled")}</strong> was submitted to <strong>${escapeHtml(competition.name)}</strong>.</p>
-        <p>Submitted at ${escapeHtml(now.toUTCString())}. Your script is now locked. We'll email you when results are announced.</p>`,
-      text: `Your script was submitted to ${competition.name} at ${now.toUTCString()}.`,
+      html: receipt.html,
+      text: receipt.text,
+      preheader: receipt.preheader,
     }).catch(() => { /* best effort */ });
 
     // Respond before the AI work — the writer should never wait on a model call to learn they made
@@ -1483,6 +1518,7 @@ export const getCompetitionHistory = async (req, res) => {
     const AWARD_LABELS = {
       winner: "Winner",
       runner_up: "Runner-Up",
+      second_runner_up: "Second Runner-Up",
       special: "Special Award",
       participant: "Participant",
       none: "Participant",

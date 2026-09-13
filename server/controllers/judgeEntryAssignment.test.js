@@ -79,17 +79,22 @@ describe("the assignment gate", () => {
 
     await getJudgeEntry(req(MINE), response().res);
 
-    assert.ok(filter._id, "the query must pin an id");
-    assert.ok(filter._id.$in, "the query must restrict to the assigned set");
-    assert.deepEqual(filter._id.$in.map(String), [MINE]);
+    // PINNED to the requested id — a plain value, NOT a $in set. The first version of the gate
+    // returned `_id: { $in: assigned }` and the call site spread it after `_id: entryId`; object
+    // spread keeps the last duplicate key, so the requested id vanished and findOne returned the
+    // first assigned entry whatever was asked for. With a single assignment that was invisible:
+    // `$in: [MINE]` looked pinned. This assertion is the one that would have caught it.
+    assert.equal(String(filter._id), MINE, "the query must pin the REQUESTED id, not the assigned set");
+    assert.equal(filter._id?.$in, undefined, "a single-entry read must not be a $in over the assigned set");
     assert.equal(String(filter.competitionId), COMP, "and still be scoped to the competition");
   });
 
   test("an unassigned entry is a 404 even with its id in hand", async () => {
     // The gating property. A filter would merely hide it from a list; this must refuse it outright.
     assignOnlyMine();
-    // The real query would find nothing, since THEIRS is not in the assigned $in.
-    CompetitionEntry.findOne = (f) => chain(f._id?.$in?.map(String).includes(THEIRS) ? { _id: THEIRS } : null);
+    // An unassigned id must produce a filter that can match NOTHING — `_id: { $in: [] }` — so the
+    // real findOne returns null. The stub honours exactly that shape.
+    CompetitionEntry.findOne = (f) => chain(Array.isArray(f._id?.$in) && f._id.$in.length === 0 ? null : { _id: String(f._id) });
 
     const target = response();
     await getJudgeEntry(req(THEIRS), target.res);
@@ -156,6 +161,52 @@ describe("the assignment gate", () => {
   });
 });
 
+describe("the pin survives with more than one assignment", () => {
+  const OTHER = "507f1f77bcf86cd799439022";
+
+  test("asking for the SECOND assigned entry pins the second, not the first", async () => {
+    // The bug in one test: every script in the queue opened as the first assigned one.
+    JudgeEntryAssignment.find = () => chain([{ entry: MINE }, { entry: OTHER }]);
+    let filter = null;
+    CompetitionEntry.findOne = (f) => { filter = f; return chain(null); };
+
+    await getJudgeEntry(req(OTHER), response().res);
+
+    assert.equal(String(filter._id), OTHER);
+    assert.notEqual(String(filter._id), MINE, "returned the first assigned entry instead of the one asked for");
+  });
+
+  test("an unassigned id yields a filter that can match nothing, even with assignments present", async () => {
+    JudgeEntryAssignment.find = () => chain([{ entry: MINE }, { entry: OTHER }]);
+    let filter = null;
+    CompetitionEntry.findOne = (f) => { filter = f; return chain(null); };
+
+    const target = response();
+    await getJudgeEntry(req(THEIRS), target.res);
+
+    assert.deepEqual(filter._id, { $in: [] });
+    assert.equal(target.captured.status, 404);
+  });
+
+  test("no call site spreads the gate after a pinned _id — the exact pattern that caused this", () => {
+    // Comments stripped first: the controller's own docblock describes the bad pattern verbatim,
+    // and a rule that forbids explaining itself is a rule the next person deletes.
+    const code = controllerSource
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    assert.equal(
+      /_id:\s*entryId\s*,\s*\.\.\./.test(code),
+      false,
+      "a call site pins _id and then spreads the gate over it — the gate's own _id wins and the pin is lost"
+    );
+    // And the positive half: single-entry reads hand entryId TO the gate.
+    assert.ok(
+      (code.match(/judgeableFilter\(competitionId, req\.user\._id, entryId\)/g) || []).length >= 3,
+      "the three single-entry call sites must pass entryId into judgeableFilter"
+    );
+  });
+});
+
 describe("the gate is applied everywhere, asserted against the source", () => {
   test("every judge-facing entry query goes through judgeableFilter", () => {
     /*
@@ -179,11 +230,17 @@ describe("the gate is applied everywhere, asserted against the source", () => {
     }
   });
 
-  test("judgeableFilter restricts by assigned id, not just competition and status", () => {
-    const start = controllerSource.indexOf("const judgeableFilter");
-    assert.ok(start > -1);
-    const body = controllerSource.slice(start, start + 600);
-    assert.match(body, /_id: \{ \$in: await assignedEntryIds\(/);
+  test("judgeableFilter restricts by assigned id in BOTH branches, not just competition and status", () => {
+    // Was pinned to the literal text of the first version of this function and went stale the
+    // moment it was restructured to fix the pin bug. Asserted on the shape now: the assigned set is
+    // fetched, the queue branch is a $in over it, and the single-entry branch pins the requested id
+    // only if it is in that set — otherwise a set that matches nothing.
+    const start = controllerSource.indexOf("const judgeableFilter = async");
+    assert.ok(start > -1, "could not locate judgeableFilter");
+    const body = controllerSource.slice(start, start + 1400);
+    assert.match(body, /const assigned = await assignedEntryIds\(competitionId, judgeId\)/, "the assigned set is not fetched");
+    assert.match(body, /_id: \{ \$in: assigned \}/, "the queue branch must be a $in over the assigned set");
+    assert.match(body, /isAssigned \? entryId : \{ \$in: \[\] \}/, "the single-entry branch must pin the requested id, or match nothing");
   });
 
   test("progress counts what is assigned, not what exists", () => {

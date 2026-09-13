@@ -47,7 +47,22 @@ export function useMobileNav({ user: userOverride, msgCount = 0 } = {}) {
     [nav.tabs, pathname, search],
   );
 
-  return { ...nav, activeTabKey };
+  /*
+   * Which More-sheet row the current URL is, if any. It is resolved here rather
+   * than in the bar for the same reason `activeTabKey` is: the answer depends
+   * on the URL, and two pieces of chrome deriving it separately is how they
+   * come to disagree.
+   *
+   * It also decides whether the More cell itself reads as current. Without it,
+   * a producer standing on /mandates would see a bar with nothing selected and
+   * no clue which cell they arrived through.
+   */
+  const activeOverflowKey = useMemo(
+    () => resolveActiveTabKey(nav.overflow, pathname, search),
+    [nav.overflow, pathname, search],
+  );
+
+  return { ...nav, activeTabKey, activeOverflowKey };
 }
 
 export default useMobileNav;

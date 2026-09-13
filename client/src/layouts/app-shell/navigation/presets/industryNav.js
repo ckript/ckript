@@ -83,7 +83,23 @@ export const industryNav = ({ user, profilePath, msgCount }) => {
       { key: "messages",  path: "/messages",  label: "Messages", icon: "messages", badge: msgCount },
     ],
 
-    mobileKeys: ["home", "featured", "messages"],
+    /*
+     * THE FOUR A PRODUCER WORKS FROM, in the order they work: the feed, their
+     * own deal book, the people they are looking for, the conversations that
+     * come out of it.
+     *
+     * Two of those were previously unreachable on a phone, not merely absent
+     * from the bar. The bar was Discover / Featured / Messages / Profile, there
+     * is no drawer in the mobile app, and no industry screen links to
+     * /dashboard or /writers — so a producer had no route at all to their own
+     * ledger or to Browse Writers. Featured swaps out because Discover already
+     * surfaces featured projects; nothing else surfaces those two.
+     *
+     * Profile leaves the bar and lands under More, alongside Featured, Top
+     * Scripts, Search, My Mandates and Saved Projects. This preset is the only
+     * one whose bar changes.
+     */
+    mobileKeys: ["home", "dashboard", "writers", "messages"],
 
   /*
    * The producer's equivalent of the writer's "My Projects": the scripts they

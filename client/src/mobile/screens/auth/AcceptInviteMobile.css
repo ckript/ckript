@@ -1,104 +1,24 @@
 /*
- * ckm-invite — collaboration invite acceptance at /invite/:token (Phase 8, D59).
- *
- * Its own family rather than part of `ckm-auth`: this is a RESULT surface, not
- * a form. It has no fields, no keyboard, and its whole job is to state one
- * situation clearly and offer the one or two things a person can do about it.
- * It shares the family's dark ground and measured ramp (see Auth.css for the
- * contrast figures) so an invitee moving from here to sign-in and back does not
- * cross a visual boundary.
+ * Ckript Mobile — collaboration invite (prefix: ckm-invite)
+ * ------------------------------------------------------------------
+ * Only what is this screen's own. The frame, the lockup, the card and the
+ * buttons are the shared `ckm-auth` surface and control kit; what is here is
+ * the inviter's mark and the one place this screen shows a skeleton.
  */
 
-.ckm .ckm-invite {
-  --auth-bg: #0f0f0f;
-  --auth-surface: #1a1a1a;
-  --auth-text: #ffffff;
-  --auth-text-2: #a9a29a;
-  --auth-text-3: #8d867d;
-  --auth-accent: var(--ckm-accent-on-dark);
-
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  padding: var(--ckm-space-8) var(--ckm-space-5) var(--ckm-space-7);
-  background: var(--auth-bg);
-  color: var(--auth-text);
-  font-family: var(--ckm-body);
-}
-
-.ckm .ckm-shell[data-screen-id="accept-invite"] .ckm-shell__scroll { background: #0f0f0f; }
-
 .ckm .ckm-invite__mark {
-  display: inline-flex;
+  flex: none;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--ckm-space-5);
-  border-radius: var(--ckm-r-lg);
-  background: var(--auth-surface);
-  color: var(--auth-accent);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--ckma-ink);
+  color: #fff;
+  font: var(--ckm-weight-medium) 18px/1 var(--ckm-display);
 }
 
-.ckm .ckm-invite__eyebrow {
-  margin: 0 0 var(--ckm-space-2);
-  font-size: var(--ckm-text-caption);
-  line-height: var(--ckm-leading-caption);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--auth-accent);
-}
-
-.ckm .ckm-invite__title {
-  margin: 0 0 var(--ckm-space-4);
-  font-family: Baskervville, Georgia, "Times New Roman", serif;
-  font-size: var(--ckm-text-title);
-  line-height: var(--ckm-leading-title);
-  font-weight: var(--ckm-weight-regular);
-  color: var(--auth-text);
-}
-
-.ckm .ckm-invite__lede {
-  margin: 0;
-  font-family: "PT Serif", Georgia, serif;
-  font-size: var(--ckm-text-body);
-  line-height: var(--ckm-leading-body);
-  color: var(--auth-text-2);
-}
-
-.ckm .ckm-invite__error { margin-top: var(--ckm-space-5); }
-
-/* The actions sit at the bottom of the surface, not directly under the text:
-   on a tall screen a paragraph followed immediately by two buttons reads as a
-   dialog, and this is a page. */
-.ckm .ckm-invite__actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ckm-space-3);
-  margin-top: auto;
-  padding-top: var(--ckm-space-8);
-}
-
-.ckm .ckm-invite .ckm-button--primary {
-  background: var(--auth-text);
-  border-color: var(--auth-text);
-  color: var(--auth-bg);
-}
-
-.ckm .ckm-invite .ckm-button--secondary {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: var(--auth-text);
-  background: transparent;
-}
-
-.ckm .ckm-invite .ckm-button--tertiary { color: var(--auth-accent); }
-
-.ckm .ckm-invite .ckm-button:focus-visible {
-  box-shadow: 0 0 0 var(--ckm-focus-ring-width) var(--auth-text),
-              0 0 0 calc(var(--ckm-focus-ring-width) + 2px) var(--auth-bg);
-}
-
-@media (max-width: 359px) {
-  .ckm .ckm-invite { padding-inline: var(--ckm-space-4); }
-  .ckm .ckm-invite__title { font-size: var(--ckm-text-title-sm); line-height: var(--ckm-leading-title-sm); }
+.ckm .ckm-invite__pending {
+  padding: var(--ckm-space-2) 0;
 }

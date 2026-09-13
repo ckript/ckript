@@ -1,0 +1,1210 @@
+/*
+ * Ckript Mobile — the Shelf landing (prefix: ckm-landing)
+ * ------------------------------------------------------------------
+ * Transcribed from "Ckript Mobile Landing.dc.html", direction 1c "The Shelf" —
+ * the direction the pricing prototype builds on ("The Shelf landing with the
+ * pricing flow it opens").
+ *
+ * The page browses like a store: a light ground, rounded white cards, snap
+ * shelves that scroll sideways, a glass nav carrying the audience switch, and a
+ * thumb-reachable action bar pinned to the bottom.
+ *
+ * FONTS. The Shelf is set in Baskervville (display) over PT Serif (prose) with
+ * Helvetica/system sans for labels and controls — the pair the desktop landing
+ * already loads under `ckript-authmodal-fonts`, not the app's Spectral/IBM Plex.
+ * That is deliberate: this is the marketing surface, and it matches the desktop
+ * page it is the phone version of.
+ *
+ * Scoped under `.ckm` (plan §7.1); one registered prefix, `ckm-landing` (§7.2).
+ */
+
+.ckm .ckm-landing {
+  --ckl-bg: #f2f2f3;
+  --ckl-surface: #ffffff;
+  --ckl-ink: #0b0a06;
+  --ckl-ink-2: #56565a;
+  --ckl-ink-3: #6d6d72;
+  --ckl-muted: #95959a;
+  --ckl-faint: #c4c4c9;
+  --ckl-line: rgba(11, 10, 6, 0.08);
+  --ckl-fill: rgba(11, 10, 6, 0.07);
+  --ckl-fill-soft: rgba(11, 10, 6, 0.045);
+  --ckl-accent: #d14d37;
+  --ckl-accent-ink: #b03a22;
+  --ckl-accent-tint: #f6e7e3;
+  --ckl-dark: #0b0a06;
+
+  --ckl-gutter: 16px;
+  --ckl-radius-card: 20px;
+  --ckl-radius-panel: 18px;
+  --ckl-radius-hero: 22px;
+  --ckl-shadow: 0 1px 3px rgba(11, 10, 6, 0.06);
+
+  --ckl-display: Baskervville, Georgia, "Times New Roman", serif;
+  --ckl-prose: "PT Serif", Georgia, serif;
+  --ckl-ui: "Helvetica Neue", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+
+  /* The action bar is fixed over the scroll surface; the page owes it room. */
+  --ckl-dock: calc(88px + var(--ckm-safe-bottom));
+}
+
+/* --- Motion ------------------------------------------------------------
+   base.css already flattens every animation under prefers-reduced-motion. */
+@keyframes ckm-landing-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes ckm-landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- Shell -------------------------------------------------------------- */
+
+.ckm .ckm-landing__scroll {
+  background: var(--ckl-bg);
+  /* The docked action bar sits over the scroll surface, so the last section
+     needs its height back or the footer ends underneath it. */
+  padding-bottom: 0;
+}
+
+.ckm .ckm-landing__page {
+  background: var(--ckl-bg);
+  color: var(--ckl-ink);
+  font-family: var(--ckl-ui);
+  padding-bottom: var(--ckl-dock);
+}
+
+/* --- Glass nav ---------------------------------------------------------- */
+
+.ckm .ckm-landing__bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--ckm-z-chrome);
+  padding-top: var(--ckm-safe-top);
+  background: rgba(242, 242, 243, 0.86);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--ckl-line);
+}
+
+.ckm .ckm-landing__bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 46px;
+  padding: 0 8px 0 18px;
+}
+
+.ckm .ckm-landing__brand img {
+  display: block;
+  height: 18px;
+  width: auto;
+}
+
+.ckm .ckm-landing__bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ckm .ckm-landing__bar-link {
+  height: var(--ckm-touch-min);
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  font: 500 14.5px/1 var(--ckl-ui);
+  color: var(--ckl-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__bar-link:active {
+  opacity: 0.5;
+}
+
+/* --- Audience switch ---------------------------------------------------- */
+
+.ckm .ckm-landing__audience {
+  display: flex;
+  gap: 2px;
+  margin: 0 var(--ckl-gutter) 10px;
+  padding: 2px;
+  background: var(--ckl-fill);
+  border-radius: 10px;
+}
+
+.ckm .ckm-landing__audience button {
+  flex: 1;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: 500 13px/1 var(--ckl-ui);
+  color: var(--ckl-ink-2);
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.ckm .ckm-landing__audience button[aria-pressed="true"] {
+  background: var(--ckl-surface);
+  color: var(--ckl-ink);
+  box-shadow: 0 1px 3px rgba(11, 10, 6, 0.14);
+}
+
+/* --- Shared section furniture ------------------------------------------- */
+
+.ckm .ckm-landing__section {
+  padding: 30px 0 8px;
+}
+
+.ckm .ckm-landing__head {
+  padding: 0 var(--ckl-gutter) 14px;
+}
+
+.ckm .ckm-landing__eyebrow {
+  display: block;
+  margin: 0;
+  font: 600 10px/13px var(--ckl-ui);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ckl-muted);
+}
+
+.ckm .ckm-landing__title {
+  margin: 9px 0 0;
+  font: 400 27px/30px var(--ckl-display);
+  letter-spacing: -0.01em;
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__title em {
+  font-style: italic;
+  color: var(--ckl-ink-3);
+}
+
+.ckm .ckm-landing__lead {
+  margin: 11px 0 0;
+  font: 400 14px/22px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+  text-wrap: pretty;
+}
+
+/* A sideways shelf. `proximity` rather than `mandatory`: a flick that lands
+   between two cards should stay where the thumb left it. */
+.ckm .ckm-landing__shelf {
+  display: flex;
+  gap: 12px;
+  padding: 2px var(--ckl-gutter) 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-padding-left: var(--ckl-gutter);
+  scrollbar-width: none;
+}
+
+.ckm .ckm-landing__shelf::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* --- Hero --------------------------------------------------------------- */
+
+.ckm .ckm-landing__hero {
+  position: relative;
+  height: 428px;
+  margin: 8px var(--ckl-gutter) 0;
+  border-radius: var(--ckl-radius-hero);
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, #171612 0 9px, #100f0a 9px 18px);
+}
+
+.ckm .ckm-landing__hero-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.72) contrast(1.08);
+}
+
+.ckm .ckm-landing__hero-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(11, 10, 6, 0.36) 0%,
+    rgba(11, 10, 6, 0.16) 30%,
+    rgba(11, 10, 6, 0.8) 74%,
+    rgba(11, 10, 6, 0.96) 100%
+  );
+}
+
+.ckm .ckm-landing__hero-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 20px 22px;
+}
+
+.ckm .ckm-landing__hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font: 600 10px/13px var(--ckl-ui);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #e6947f;
+}
+
+.ckm .ckm-landing__diamond {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  background: var(--ckl-accent);
+  transform: rotate(45deg);
+}
+
+.ckm .ckm-landing__hero h1 {
+  margin: 14px 0 0;
+  font: 400 36px/38px var(--ckl-display);
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.ckm .ckm-landing__hero h1 i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  background: var(--ckl-accent);
+}
+
+/* Likewise scoped to a class rather than every <p> in the hero, which would
+   also have claimed the kicker above the headline. */
+.ckm .ckm-landing__hero-lead {
+  margin: 14px 0 18px;
+  font: 400 14px/22px var(--ckl-prose);
+  color: rgba(255, 255, 255, 0.72);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-landing__hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* --- Buttons ------------------------------------------------------------ */
+
+.ckm .ckm-landing__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 50px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ckl-ink);
+  font: 500 16px/1 var(--ckl-ui);
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.ckm .ckm-landing__cta:active {
+  opacity: 0.62;
+  transform: scale(0.977);
+}
+
+.ckm .ckm-landing__cta--grow {
+  flex: 1;
+}
+
+.ckm .ckm-landing__cta--pill {
+  border-radius: 25px;
+}
+
+.ckm .ckm-landing__cta--ink {
+  background: var(--ckl-dark);
+  color: #fff;
+}
+
+.ckm .ckm-landing__cta--accent {
+  background: var(--ckl-accent);
+  color: #fff;
+}
+
+.ckm .ckm-landing__cta--quiet {
+  flex: none;
+  height: 50px;
+  padding: 0 12px;
+  background: none;
+  font: 400 14.5px/1 var(--ckl-ui);
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.ckm .ckm-landing__cta--quiet:active {
+  opacity: 0.5;
+  transform: none;
+}
+
+.ckm .ckm-landing__cta .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* --- Marquee ------------------------------------------------------------ */
+
+.ckm .ckm-landing__marquee {
+  height: 42px;
+  margin: 20px 0 4px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-top: 1px solid var(--ckl-line);
+  border-bottom: 1px solid var(--ckl-line);
+}
+
+.ckm .ckm-landing__marquee-track {
+  display: flex;
+  width: max-content;
+  animation: ckm-landing-marquee 40s linear infinite;
+}
+
+/* Its own class rather than a bare `span`: a descendant element selector here
+   also matched the diamond inside each phrase and stretched it to 26px. */
+.ckm .ckm-landing__marquee-phrase {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  font: italic 400 13.5px/1 var(--ckl-prose);
+  color: var(--ckl-ink-3);
+  white-space: nowrap;
+}
+
+.ckm .ckm-landing__marquee-run {
+  display: flex;
+  align-items: center;
+}
+
+/* --- Steps shelf -------------------------------------------------------- */
+
+.ckm .ckm-landing__step {
+  flex: none;
+  width: 232px;
+  scroll-snap-align: start;
+  background: var(--ckl-surface);
+  border-radius: var(--ckl-radius-panel);
+  overflow: hidden;
+  box-shadow: var(--ckl-shadow);
+}
+
+.ckm .ckm-landing__step-media {
+  position: relative;
+  height: 132px;
+  background: repeating-linear-gradient(45deg, #ececee 0 9px, #e1e1e3 9px 18px);
+}
+
+.ckm .ckm-landing__step-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ckm .ckm-landing__step-num {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: rgba(11, 10, 6, 0.56);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 400 11px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.1em;
+  color: #fff;
+}
+
+.ckm .ckm-landing__step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px 16px;
+}
+
+.ckm .ckm-landing__step-body strong {
+  font: 400 19px/22px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__step-body span {
+  font: 400 13px/19px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+}
+
+/* --- Grouped list (tools) ----------------------------------------------- */
+
+.ckm .ckm-landing__list {
+  margin: 0 var(--ckl-gutter);
+  background: var(--ckl-surface);
+  border-radius: var(--ckl-radius-panel);
+  overflow: hidden;
+  box-shadow: var(--ckl-shadow);
+}
+
+.ckm .ckm-landing__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--ckm-touch-min);
+  padding: 15px 14px 15px 16px;
+  border: 0;
+  border-top: 1px solid var(--ckl-line);
+  background: var(--ckl-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__row:first-child {
+  border-top-color: transparent;
+}
+
+.ckm .ckm-landing__row:active {
+  background: #f4f4f6;
+}
+
+.ckm .ckm-landing__row-num {
+  flex: none;
+  width: 34px;
+  font: 400 20px/22px var(--ckl-display);
+  color: var(--ckl-faint);
+}
+
+.ckm .ckm-landing__row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ckm .ckm-landing__row-title {
+  font: 400 17px/21px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__row-tag {
+  font: 600 9px/12px var(--ckl-ui);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ckl-muted);
+}
+
+.ckm .ckm-landing__chevron {
+  flex: none;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--ckl-faint);
+}
+
+/* --- Formats shelf ------------------------------------------------------ */
+
+.ckm .ckm-landing__format {
+  position: relative;
+  flex: none;
+  width: 158px;
+  height: 214px;
+  scroll-snap-align: start;
+  border: 0;
+  border-radius: var(--ckl-radius-panel);
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, #ececee 0 9px, #e1e1e3 9px 18px);
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__format:active {
+  opacity: 0.82;
+}
+
+.ckm .ckm-landing__format img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ckm .ckm-landing__format::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 10, 6, 0) 40%, rgba(11, 10, 6, 0.86) 100%);
+}
+
+.ckm .ckm-landing__format-copy {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 13px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.ckm .ckm-landing__format-copy strong {
+  font: 400 19px/22px var(--ckl-display);
+  color: #fff;
+}
+
+.ckm .ckm-landing__format-copy span {
+  font: 600 9.5px/13px var(--ckl-ui);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* --- Trailer panel ------------------------------------------------------ */
+
+.ckm .ckm-landing__trailer {
+  margin: 30px var(--ckl-gutter) 6px;
+  border-radius: var(--ckl-radius-hero);
+  overflow: hidden;
+  background: var(--ckl-dark);
+}
+
+.ckm .ckm-landing__trailer-media {
+  position: relative;
+  height: 178px;
+  background: repeating-linear-gradient(45deg, #171612 0 9px, #100f0a 9px 18px);
+}
+
+.ckm .ckm-landing__trailer-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ckm .ckm-landing__trailer-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 10, 6, 0.42) 0%, rgba(11, 10, 6, 0.08) 46%, rgba(11, 10, 6, 0.72) 100%);
+}
+
+.ckm .ckm-landing__trailer-badge {
+  position: absolute;
+  top: 13px;
+  left: 13px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 20px;
+  background: rgba(11, 10, 6, 0.5);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  font: 600 9.5px/1 var(--ckl-ui);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.ckm .ckm-landing__trailer-time {
+  position: absolute;
+  right: 13px;
+  bottom: 13px;
+  z-index: 1;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: rgba(11, 10, 6, 0.46);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 400 10.5px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.ckm .ckm-landing__trailer-body {
+  padding: 20px 18px;
+}
+
+.ckm .ckm-landing__trailer-body h2 {
+  margin: 0;
+  font: 400 27px/31px var(--ckl-display);
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.ckm .ckm-landing__trailer-body h2 em {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.ckm .ckm-landing__trailer-body p {
+  margin: 12px 0 18px;
+  font: 400 13.5px/21px var(--ckl-prose);
+  color: rgba(255, 255, 255, 0.62);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-landing__trailer-body .ckm-landing__cta {
+  width: 100%;
+  height: 48px;
+  border-radius: 24px;
+}
+
+.ckm .ckm-landing__ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: var(--ckm-touch-min);
+  margin-top: 4px;
+  border: 0;
+  background: none;
+  font: 400 14.5px/1 var(--ckl-ui);
+  color: rgba(255, 255, 255, 0.68);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__ghost:active {
+  opacity: 0.5;
+}
+
+.ckm .ckm-landing__ghost .material-symbols-outlined {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* --- Problem card ------------------------------------------------------- */
+
+.ckm .ckm-landing__problem {
+  padding: 30px var(--ckl-gutter) 6px;
+}
+
+.ckm .ckm-landing__problem .ckm-landing__title {
+  margin-bottom: 16px;
+}
+
+.ckm .ckm-landing__problem-card {
+  padding: 20px 18px;
+  background: var(--ckl-surface);
+  border-radius: var(--ckl-radius-card);
+  box-shadow: var(--ckl-shadow);
+  animation: ckm-landing-rise 320ms ease both;
+}
+
+.ckm .ckm-landing__problem-card h3 {
+  margin: 11px 0 15px;
+  font: 400 25px/28px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__problem-card h3 em {
+  font-style: italic;
+  color: var(--ckl-ink-3);
+}
+
+.ckm .ckm-landing__problem-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ckm .ckm-landing__problem-rows li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font: 400 13.5px/20px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+}
+
+.ckm .ckm-landing__problem-rows .material-symbols-outlined {
+  flex: none;
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--ckl-accent);
+}
+
+.ckm .ckm-landing__problem-card .ckm-landing__cta {
+  width: 100%;
+  height: 46px;
+  margin-top: 17px;
+  border-radius: 23px;
+  font-size: 15px;
+}
+
+.ckm .ckm-landing__flip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ckl-fill-soft);
+  font: 400 14px/19px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__flip:active {
+  background: rgba(11, 10, 6, 0.09);
+}
+
+.ckm .ckm-landing__flip .material-symbols-outlined {
+  flex: none;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--ckl-muted);
+}
+
+/* --- Plans teaser ------------------------------------------------------- */
+
+.ckm .ckm-landing__plans {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: calc(100% - (var(--ckl-gutter) * 2));
+  margin: 26px var(--ckl-gutter) 0;
+  padding: 20px 18px;
+  border: 0;
+  border-radius: var(--ckl-radius-card);
+  background: var(--ckl-surface);
+  box-shadow: var(--ckl-shadow);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__plans:active {
+  opacity: 0.75;
+}
+
+.ckm .ckm-landing__plans-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.ckm .ckm-landing__plans-kicker {
+  font: 600 9.5px/12px var(--ckl-ui);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ckl-muted);
+}
+
+.ckm .ckm-landing__plans strong {
+  font: 400 22px/26px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+/* Its own class, not `span:last-child`: that also matched the chevron in the
+   card's top row and the `font` shorthand reset its icon font to PT Serif, so
+   the glyph rendered as the literal word "chevron_right". */
+.ckm .ckm-landing__plans-sub {
+  font: 400 13.5px/20px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+}
+
+/* --- Partners ----------------------------------------------------------- */
+
+.ckm .ckm-landing__partners {
+  padding: 30px var(--ckl-gutter) 6px;
+}
+
+.ckm .ckm-landing__partners-rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.ckm .ckm-landing__partners h2 {
+  margin: 13px 0 7px;
+  text-align: center;
+  font: 400 27px/30px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__partners h2 em {
+  font-style: italic;
+  color: var(--ckl-ink-3);
+}
+
+.ckm .ckm-landing__partners-lead {
+  margin: 0 0 18px;
+  text-align: center;
+  font: 400 13.5px/21px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+}
+
+.ckm .ckm-landing__partner-grid {
+  display: flex;
+  gap: 12px;
+}
+
+.ckm .ckm-landing__partner {
+  flex: 1;
+  display: block;
+  border: 0;
+  border-radius: var(--ckl-radius-panel);
+  overflow: hidden;
+  background: var(--ckl-surface);
+  box-shadow: var(--ckl-shadow);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__partner:active {
+  opacity: 0.75;
+}
+
+.ckm .ckm-landing__partner-plate {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88px;
+  background: #0f0e0b;
+}
+
+.ckm .ckm-landing__partner-plate img {
+  max-height: 52%;
+  max-width: 70%;
+  object-fit: contain;
+}
+
+.ckm .ckm-landing__partner-plate i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+}
+
+.ckm .ckm-landing__partner-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 13px 14px;
+}
+
+.ckm .ckm-landing__partner-meta span {
+  font: 600 9px/12px var(--ckl-ui);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ckl-muted);
+}
+
+.ckm .ckm-landing__partner-meta strong {
+  font: 400 16px/19px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+/* --- Final call --------------------------------------------------------- */
+
+.ckm .ckm-landing__final {
+  position: relative;
+  margin: 32px var(--ckl-gutter) 0;
+  padding: 34px 22px 26px;
+  border-radius: var(--ckl-radius-hero);
+  background: var(--ckl-dark);
+  text-align: center;
+  overflow: hidden;
+}
+
+.ckm .ckm-landing__final::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.ckm .ckm-landing__final-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 6px 0 18px;
+  background: var(--ckl-accent);
+  transform: rotate(45deg);
+}
+
+.ckm .ckm-landing__final h2 {
+  margin: 0;
+  font: 400 31px/34px var(--ckl-display);
+  letter-spacing: -0.015em;
+  color: #fff;
+}
+
+.ckm .ckm-landing__final h2 em {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.ckm .ckm-landing__final p {
+  margin: 14px 0 22px;
+  font: 400 14px/22px var(--ckl-prose);
+  color: rgba(255, 255, 255, 0.64);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-landing__final .ckm-landing__cta {
+  width: 100%;
+  border-radius: 25px;
+}
+
+.ckm .ckm-landing__final .ckm-landing__ghost {
+  height: 46px;
+  margin-top: 4px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* --- Challenge ---------------------------------------------------------- */
+
+.ckm .ckm-landing__challenge {
+  margin: 26px var(--ckl-gutter) 0;
+  padding: 20px 18px;
+  background: var(--ckl-surface);
+  border-radius: var(--ckl-radius-card);
+  box-shadow: var(--ckl-shadow);
+}
+
+.ckm .ckm-landing__challenge h2 {
+  margin: 9px 0 0;
+  font: 400 25px/28px var(--ckl-display);
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__challenge-label {
+  margin: 8px 0 12px;
+  font: 400 13.5px/20px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+}
+
+.ckm .ckm-landing__challenge-clock {
+  margin-bottom: 16px;
+}
+
+.ckm .ckm-landing__challenge .ckm-landing__cta {
+  width: 100%;
+  height: 46px;
+  border-radius: 23px;
+  font-size: 15px;
+}
+
+/* --- Footer ------------------------------------------------------------- */
+
+.ckm .ckm-landing__footer {
+  padding: 30px 20px 24px;
+}
+
+.ckm .ckm-landing__footer > img {
+  display: block;
+  height: 18px;
+  width: auto;
+}
+
+.ckm .ckm-landing__footer-tagline {
+  margin: 11px 0 18px;
+  font: italic 400 13.5px/20px var(--ckl-prose);
+  color: var(--ckl-ink-3);
+}
+
+.ckm .ckm-landing__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ckm .ckm-landing__chip {
+  min-height: var(--ckm-touch-floor);
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(11, 10, 6, 0.05);
+  font: 400 12.5px/1 var(--ckl-ui);
+  color: var(--ckl-ink-2);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__chip:active {
+  background: var(--ckl-fill);
+}
+
+.ckm .ckm-landing__copyright {
+  margin: 20px 0 0;
+  font: 400 11.5px/18px var(--ckl-ui);
+  color: var(--ckl-muted);
+}
+
+/* The statutory block. Small, quiet, and never dropped: it is a legal
+   disclosure, not decoration. */
+.ckm .ckm-landing__legal {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ckl-line);
+}
+
+.ckm .ckm-landing__legal p {
+  margin: 0 0 6px;
+  font: 400 11.5px/18px var(--ckl-ui);
+  color: var(--ckl-muted);
+}
+
+.ckm .ckm-landing__legal-head {
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--ckl-ink-2);
+}
+
+.ckm .ckm-landing__legal a {
+  color: var(--ckl-accent-ink);
+  text-decoration: none;
+}
+
+/* --- Docked action bar -------------------------------------------------- */
+
+.ckm .ckm-landing__dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--ckm-z-sticky);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px var(--ckl-gutter) calc(14px + var(--ckm-safe-bottom));
+  background: linear-gradient(180deg, rgba(242, 242, 243, 0), rgba(242, 242, 243, 0.94) 42%);
+  pointer-events: none;
+}
+
+.ckm .ckm-landing__dock > * {
+  pointer-events: auto;
+}
+
+.ckm .ckm-landing__dock-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border: 0;
+  border-radius: 25px;
+  background: var(--ckl-fill);
+  color: var(--ckl-ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-landing__dock-search:active {
+  opacity: 0.6;
+}
+
+.ckm .ckm-landing__dock-search .material-symbols-outlined {
+  font-size: 22px;
+  line-height: 1;
+}
+
+/* --- Tool sheet --------------------------------------------------------- */
+
+.ckm .ckm-landing__sheet-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ckm .ckm-landing__sheet-num {
+  font: 400 11px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.14em;
+  color: var(--ckl-accent);
+}
+
+.ckm .ckm-landing__sheet-tag {
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: var(--ckl-accent-tint);
+  font: 600 9.5px/1 var(--ckl-ui);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ckl-accent-ink);
+}
+
+.ckm .ckm-landing__sheet h3 {
+  margin: 14px 0 0;
+  font: 400 29px/32px var(--ckl-display);
+  letter-spacing: -0.015em;
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__sheet-italic {
+  margin: 10px 0 0;
+  font: italic 400 16px/23px var(--ckl-prose);
+  color: var(--ckl-ink-3);
+}
+
+.ckm .ckm-landing__sheet-desc {
+  margin: 12px 0 0;
+  font: 400 14px/22px var(--ckl-prose);
+  color: var(--ckl-ink-2);
+  text-wrap: pretty;
+}
+
+.ckm .ckm-landing__sheet-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ckm .ckm-landing__sheet-bullets li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font: 600 12.5px/18px var(--ckl-ui);
+  color: var(--ckl-ink);
+}
+
+.ckm .ckm-landing__sheet-bullets .ckm-landing__diamond {
+  margin-top: 6px;
+}

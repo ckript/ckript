@@ -1,0 +1,472 @@
+/*
+ * Ckript Mobile — account entry, iOS surface (prefix: ckm-auth)
+ * ------------------------------------------------------------------
+ * The frame every account-entry screen is built in, transcribed from the
+ * "Ckript iOS Signup" prototype. Scoped under `.ckm` (plan §7.1); every class
+ * belongs to the registered `ckm-auth` prefix (§7.2).
+ *
+ * THE SCROLL SURFACE IS STILL THE SHELL'S. §8.1 allows exactly one primary
+ * scroll surface per screen, so this family does not open a second one: the
+ * bar is `position: sticky; top: 0` and the docked action is
+ * `position: sticky; bottom: 0` inside the shell's own <main>. That is what
+ * gives the translucent bar its blur over live content and keeps the primary
+ * action on screen without a nested scroller fighting the momentum of the
+ * outer one.
+ *
+ * `.ckm-auth__scroll` is handed to MobileShell as `scrollClassName` — the
+ * documented way for a screen to tune the shell surface it was given, rather
+ * than reaching into `.ckm-shell__scroll` from here.
+ */
+
+/* --- The prototype's palette -------------------------------------------
+ * The mobile token file already carries this family's brand colours
+ * (--ckm-accent-strong is the prototype's #C9482F, --ckm-accent-ink its
+ * #B03A22, --ckm-red-ink its #BA4034, --ckm-green-ink its #2A7A48), so those
+ * are read, not restated. What IS restated is the neutral ramp: account entry
+ * is the one place in the app that sits on iOS's cool grey rather than the
+ * product's warm paper, and its ink is a stop darker than --ckm-ink. Keeping
+ * those as local custom properties means the difference is declared once and
+ * visible, instead of hex codes scattered through six files.
+ */
+.ckm .ckm-auth,
+.ckm .ckm-auth__sheet {
+  --ckma-bg: #f7f7f8;
+  --ckma-surface: #ffffff;
+  --ckma-ink: #0b0a06;
+  --ckma-ink-2: #57544f;
+  --ckma-ink-3: #6f6c66;
+  --ckma-ink-4: #8a8780;
+  --ckma-placeholder: #9a978f;
+  --ckma-line: #e4e4e6;
+  --ckma-sep: rgba(60, 60, 67, 0.11);
+  --ckma-press: #ececee;
+  --ckma-track: rgba(11, 10, 6, 0.09);
+  --ckma-danger: var(--ckm-red-ink);
+  --ckma-danger-line: #e9cfcb;
+  --ckma-ok: var(--ckm-green-ink);
+  --ckma-accent: var(--ckm-accent-strong);
+  --ckma-accent-ink: var(--ckm-accent-ink);
+  --ckma-accent-soft: var(--ckm-accent-soft);
+  --ckma-on-dark: #dd5a42;
+  --ckma-dark: #0b0a06;
+
+  /*
+   * FOCUS IS NOT AN ERROR, SO IT MUST NOT BE THE SAME COLOUR AS ONE.
+   *
+   * The app-wide focus ring is the terracotta accent (#d14d37). In every other
+   * family that is unambiguous, because nothing else there draws a coloured
+   * stroke around a control. Here the invalid state does exactly that, in
+   * #ba4034 — and at arm's length on a phone the two are the same red. A field
+   * you had just tapped into looked like a field you had got wrong, and a field
+   * you HAD got wrong looked like the one you were typing in.
+   *
+   * One colour cannot carry two opposite meanings. Red now means only "this is
+   * wrong". Focus is ink: the same near-black as the primary action, so an
+   * active control reads as the thing you are working on rather than a warning.
+   */
+  --ckm-focus-ring: var(--ckma-ink);
+
+  --ckma-gutter: 20px;
+  --ckma-inset: 16px;
+  --ckma-bar-h: 44px;
+  --ckma-control-h: 50px;
+  --ckma-radius-card: 12px;
+  --ckma-radius-panel: 14px;
+  --ckma-radius-control: 13px;
+  /* The prototype's 34px foot is an iPhone home-indicator allowance. On the
+     web the OS draws that strip itself, so the honest measurement is the safe
+     inset — with a floor so the action never sits flush to a chinless screen. */
+  --ckma-foot-bottom: max(var(--ckm-safe-bottom), 20px);
+}
+
+/* --- Motion ------------------------------------------------------------
+ * The prototype's four transitions. base.css already reduces every animation
+ * to nothing under prefers-reduced-motion, so these need no guard of their own.
+ */
+@keyframes ckm-auth-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ckm-auth-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ckm-auth-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ckm-auth-nudge {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+/* --- The shell surface this family asks for ----------------------------- */
+
+.ckm .ckm-auth__scroll {
+  display: flex;
+  flex-direction: column;
+  background: #f7f7f8;
+}
+
+/*
+ * The screen docks its own action and owns its own bottom inset, so the mode's
+ * bottom padding would be counted twice — 24px of empty page under a footer
+ * that is already clear of the home indicator.
+ *
+ * Written against the shell's own selector rather than the bare class because
+ * the rule it overrides (`.ckm-shell--flow > .ckm-shell__scroll`) has the same
+ * specificity, and a tie decided by stylesheet import order is a rule that
+ * breaks the day someone reorders an import.
+ */
+.ckm .ckm-shell > .ckm-shell__scroll.ckm-auth__scroll {
+  padding-bottom: 0;
+}
+
+/* --- The screen --------------------------------------------------------- */
+
+.ckm .ckm-auth {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--ckma-bg);
+  color: var(--ckma-ink);
+  font-family: var(--ckm-body);
+  animation: ckm-auth-in 380ms var(--ckm-ease) both;
+}
+
+/* The full-bleed dark screens — today, the finish. */
+.ckm .ckm-auth--dark {
+  background: var(--ckma-dark);
+  color: #fff;
+  /* Ink on ink is no ring at all; on this ground the paper is the contrast. */
+  --ckm-focus-ring: #ffffff;
+  animation: ckm-auth-fade 450ms ease both;
+}
+
+/* --- Navigation bar ----------------------------------------------------- */
+
+.ckm .ckm-auth__nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--ckm-z-chrome);
+  flex: none;
+  /* The safe inset on a device with a notch; a hair of breathing room on one
+     without, so the back control never sits flush against the browser chrome. */
+  padding-top: max(var(--ckm-safe-top), 4px);
+  background: var(--ckma-bg);
+  border-bottom: 1px solid transparent;
+  transition: border-color 200ms ease;
+}
+
+/* Translucent over live content, for the screens that scroll a long body under
+   their bar. The plain variant is the stepper's, whose bar carries the progress
+   rail and must not let type show through it. */
+.ckm .ckm-auth__nav--glass {
+  background: rgba(247, 247, 248, 0.82);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.ckm .ckm-auth__nav.is-scrolled {
+  border-bottom-color: rgba(60, 60, 67, 0.13);
+}
+
+.ckm .ckm-auth--dark .ckm-auth__nav {
+  background: transparent;
+  border-bottom-color: transparent;
+}
+
+.ckm .ckm-auth__nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ckm-space-2);
+  height: var(--ckma-bar-h);
+  padding: 0 12px 0 8px;
+}
+
+.ckm .ckm-auth__nav-slot {
+  display: flex;
+  align-items: center;
+  min-width: var(--ckma-bar-h);
+}
+
+.ckm .ckm-auth__nav-slot--end {
+  justify-content: flex-end;
+}
+
+.ckm .ckm-auth__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: var(--ckma-bar-h);
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--ckma-ink);
+  font: 400 17px/1 var(--ckm-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__back .material-symbols-outlined {
+  font-size: 22px;
+  line-height: 1;
+  margin-left: -2px;
+}
+
+.ckm .ckm-auth__back:active {
+  opacity: 0.4;
+}
+
+.ckm .ckm-auth__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ckma-bar-h);
+  height: var(--ckma-bar-h);
+  border: 0;
+  background: none;
+  color: var(--ckma-ink-3);
+  font-size: 22px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__close:active {
+  opacity: 0.4;
+}
+
+.ckm .ckm-auth__nav-action {
+  height: var(--ckma-bar-h);
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--ckma-accent-ink);
+  font: 400 17px/1 var(--ckm-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__nav-action:active {
+  opacity: 0.5;
+}
+
+/* The screen's own title, repeated small in the bar and revealed only once the
+   display heading has scrolled away — so the bar is never a duplicate of the
+   line directly beneath it. */
+.ckm .ckm-auth__nav-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--ckm-weight-semibold) 17px/1 var(--ckm-body);
+  color: var(--ckma-ink);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.ckm .ckm-auth__nav.is-scrolled .ckm-auth__nav-title {
+  opacity: 1;
+}
+
+/* The stepper's caption: which account is being made. Always legible, because
+   it is the answer to "what am I in the middle of?". */
+.ckm .ckm-auth__nav-caption {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 13px/1 var(--ckm-body);
+  color: var(--ckma-ink-3);
+}
+
+/* --- Body --------------------------------------------------------------- */
+
+.ckm .ckm-auth__body {
+  flex: 1 1 auto;
+  padding: 22px var(--ckma-gutter) 20px;
+}
+
+/* The screens whose cards run wider than the type column pad their own
+   children instead, so a photo can reach the frame edge. */
+.ckm .ckm-auth__body--flush {
+  padding: 8px 0 32px;
+}
+
+.ckm .ckm-auth__body--flush > .ckm-auth__head {
+  padding: 0 var(--ckma-gutter) 22px;
+}
+
+/* --- Editorial lockup --------------------------------------------------- */
+
+.ckm .ckm-auth__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--ckm-space-2);
+  margin: 0 0 10px;
+  font: var(--ckm-weight-bold) 10.5px/14px var(--ckm-body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ckma-accent-ink);
+}
+
+.ckm .ckm-auth__eyebrow::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ckma-accent);
+}
+
+.ckm .ckm-auth__eyebrow--danger {
+  color: var(--ckma-danger);
+}
+
+.ckm .ckm-auth__eyebrow--danger::before {
+  background: var(--ckma-danger);
+}
+
+.ckm .ckm-auth--dark .ckm-auth__eyebrow {
+  color: var(--ckma-on-dark);
+}
+
+.ckm .ckm-auth--dark .ckm-auth__eyebrow::before {
+  background: var(--ckma-on-dark);
+}
+
+.ckm .ckm-auth__title {
+  margin: 0 0 6px;
+  font: var(--ckm-weight-medium) 35px/41px var(--ckm-display);
+  letter-spacing: -0.02em;
+  color: var(--ckma-ink);
+}
+
+/*
+ * The heading is focused programmatically on every screen change so the surface
+ * is announced. That is a landing, not a tab stop, and it must not paint a ring
+ * — including when it inherits :focus-visible from the control focus moved away
+ * from, which is exactly what happens stepping out of a text field.
+ */
+.ckm .ckm-auth .ckm-auth__title:focus,
+.ckm .ckm-auth .ckm-auth__title:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.ckm .ckm-auth--dark .ckm-auth__title {
+  color: #fff;
+}
+
+.ckm .ckm-auth__title em {
+  font-style: normal;
+  color: var(--ckma-accent-ink);
+}
+
+.ckm .ckm-auth__lede {
+  margin: 0 0 24px;
+  font: italic var(--ckm-weight-regular) 16px/22px var(--ckm-display);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__head--tight .ckm-auth__lede {
+  margin-bottom: 0;
+}
+
+/* --- Docked action ------------------------------------------------------ */
+
+.ckm .ckm-auth__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--ckm-z-sticky);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px var(--ckma-gutter) var(--ckma-foot-bottom);
+  /* Fades the scrolling body out under the action rather than cutting it, so
+     the last row never looks clipped. */
+  background: linear-gradient(180deg, rgba(247, 247, 248, 0), var(--ckma-bg) 30%);
+}
+
+.ckm .ckm-auth--dark .ckm-auth__foot {
+  gap: 12px;
+  padding-left: 30px;
+  padding-right: 30px;
+  background: var(--ckma-dark);
+}
+
+.ckm .ckm-auth__legal {
+  margin: 2px 0 0;
+  text-align: center;
+  font: 400 12px/17px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__legal a {
+  color: var(--ckma-accent-ink);
+  text-decoration: none;
+}
+
+/* --- The "or do this instead" line -------------------------------------- */
+
+.ckm .ckm-auth__alt {
+  margin: 0;
+  padding: 26px 0 0;
+  text-align: center;
+  font: 400 15px/20px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+/* A flush body pads nothing, so this line supplies its own gutter there. */
+.ckm .ckm-auth__body--flush .ckm-auth__alt {
+  padding-left: var(--ckma-gutter);
+  padding-right: var(--ckma-gutter);
+}
+
+.ckm .ckm-auth__link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: var(--ckm-weight-medium) 15px/20px var(--ckm-body);
+  color: var(--ckma-accent-ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__link:active {
+  opacity: 0.5;
+}

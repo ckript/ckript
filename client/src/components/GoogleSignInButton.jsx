@@ -12,6 +12,13 @@ import { AuthContext } from "../context/AuthContext";
  *   referralCode         – optional referral code to attach when creating a new user
  *   text                 – "signin_with" | "signup_with" | "continue_with" (default)
  *   disabled             – disables click handling
+ *   width                – rendered button width in px (Google caps this at 400).
+ *                          Defaults to the 320 the desktop surfaces have always
+ *                          used. Google renders its own button and nothing about
+ *                          its chrome can be styled from outside, so a caller
+ *                          whose column is not 320px wide has no way to stop it
+ *                          floating in the middle of one — passing the real
+ *                          width is the only way to make it fill its place.
  */
 export default function GoogleSignInButton({
   onSuccess,
@@ -20,6 +27,7 @@ export default function GoogleSignInButton({
   role = "",
   text = "continue_with",
   disabled = false,
+  width = 320,
 }) {
   const { googleSignIn } = useContext(AuthContext);
   const [busy, setBusy] = useState(false);
@@ -61,7 +69,7 @@ export default function GoogleSignInButton({
         text={text}
         size="large"
         shape="rectangular"
-        width="320"
+        width={String(width)}
       />
     </div>
   );

@@ -18,7 +18,7 @@ import SignInMobile from "./SignInMobile";
  * the same two callbacks, because what is under test here is what SignInMobile
  * DOES with a Google result, not whether Google's iframe mounts.
  */
-vi.mock("../../../components/GoogleSignInButton", () => ({
+vi.mock("./ios/AuthGoogleSlot", () => ({
   default: ({ onSuccess, onError }) => (
     <div>
       <button type="button" onClick={() => onSuccess({ token: "t", name: "Mira", role: "creator" })}>
@@ -150,6 +150,41 @@ describe("SignInMobile", () => {
 
     expect(el.textContent).toContain("Payment dispute");
     expect(buttonWith(el, "Try again")).toBeUndefined();
+  });
+
+  it("replaces the form with a halt, because no control on it can change the answer", async () => {
+    /*
+     * This used to be a banner above a form nobody was allowed to submit. The
+     * two things the person actually needs — the reason, and a way to reach a
+     * human — were the two the banner had least room for.
+     */
+    const login = vi.fn().mockRejectedValue({
+      response: { status: 403, data: { accountFrozen: true, message: "Account frozen", frozenReason: "Payment dispute" } },
+    });
+    const el = await mount({ login });
+    await fillCredentials(el);
+    await act(async () => buttonWith(el, "Sign in").click());
+
+    expect(el.querySelector('[data-screen-id="sign-in-halted"]')).not.toBeNull();
+    expect(el.querySelector('input[type="password"]')).toBeNull();
+    const support = [...el.querySelectorAll("a")].find((a) => a.textContent.includes("Contact support"));
+    expect(support.getAttribute("href")).toMatch(/^mailto:support@ckript\.com/);
+
+    // And it is a detour, not a dead end: the form comes back.
+    await act(async () => buttonWith(el, "Sign in").click());
+    expect(el.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
+  it("shuts a closed account down with its own words rather than the frozen ones", async () => {
+    const login = vi.fn().mockRejectedValue({
+      response: { status: 403, data: { accountDeleted: true, message: "This account was closed" } },
+    });
+    const el = await mount({ login });
+    await fillCredentials(el);
+    await act(async () => buttonWith(el, "Sign in").click());
+
+    expect(el.querySelector("h1").textContent).toContain("closed");
+    expect(el.textContent).toContain("This account was closed");
   });
 
   it("offers a retry when the failure is ours, not theirs", async () => {

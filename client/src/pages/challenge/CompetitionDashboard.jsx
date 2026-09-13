@@ -197,9 +197,22 @@ const CompetitionDashboard = () => {
   const awardLabel = {
     winner: "Winner",
     runner_up: "Runner-Up",
+    second_runner_up: "Second Runner-Up",
     special: entry.result?.specialTitle || "Special Award",
     participant: "Participant",
   }[entry.result?.award];
+  // The competition's own artwork for this badge, when the admin uploaded one: a special award's
+  // own image first, then the image for its kind. Mirrors badgeImageFor on the server.
+  const badgeImage = (() => {
+    const award = entry.result?.award;
+    if (award === "special" && entry.result?.specialTitle) {
+      const wanted = String(entry.result.specialTitle).trim().toLowerCase();
+      const row = (competition.prizes?.special || []).find((s) => String(s?.title || "").trim().toLowerCase() === wanted);
+      if (row?.badgeUrl) return row.badgeUrl;
+    }
+    const kind = { winner: "winner", runner_up: "runnerUp", second_runner_up: "secondRunnerUp", special: "special", participant: "participant" }[award];
+    return kind ? String(competition.badgeImages?.[kind] || "") : "";
+  })();
 
   const renderHome = () => (
     <div className="ckc-stack">
@@ -261,10 +274,13 @@ const CompetitionDashboard = () => {
             <Trophy className="h-5 w-5" style={{ color: "var(--ckc-muted)" }} aria-hidden="true" />
             <h2 className="ckc-title ckc-h2">Results are in</h2>
           </div>
+          {badgeImage && entry.result.award !== "none" ? (
+            <img src={badgeImage} alt="" style={{ width: 96, height: 96, objectFit: "contain", marginTop: 16 }} />
+          ) : null}
           {awardLabel && entry.result.award !== "none" ? (
             <p className="ckc-title ckc-h3" style={{ marginTop: 14 }}>{awardLabel}</p>
           ) : null}
-          {["winner", "runner_up", "special"].includes(entry.result?.award) ? (
+          {["winner", "runner_up", "second_runner_up", "special"].includes(entry.result?.award) ? (
             <p className="ckc-prose" style={{ marginTop: 8 }}>
               Congratulations — your rewards have been added to your account.
             </p>
@@ -282,7 +298,7 @@ const CompetitionDashboard = () => {
             >
               Your script is unlocked — you'll find it in{" "}
               <Link to="/dashboard" className="ckc-link">your drafts</Link>.
-              {["winner", "runner_up"].includes(entry.result?.award)
+              {entry.rewardsGranted?.some((r) => r.type === "featured_script")
                 ? " Publish it to claim your featured placement."
                 : " It's yours to edit, publish or co-write as you like."}
             </p>
@@ -382,6 +398,7 @@ const CompetitionDashboard = () => {
       {[
         { title: "Winner", items: competition.prizes?.winner || [] },
         { title: "Runner-Up", items: competition.prizes?.runnerUp || [] },
+        ...(competition.prizes?.secondRunnerUp?.length ? [{ title: "Second Runner-Up", items: competition.prizes.secondRunnerUp }] : []),
         { title: "Special Awards", items: (competition.prizes?.special || []).map((s) => (s.description ? `${s.title} — ${s.description}` : s.title)) },
       ].map((group) => (
         <Card key={group.title}>

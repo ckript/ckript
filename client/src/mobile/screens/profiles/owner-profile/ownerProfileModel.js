@@ -57,6 +57,8 @@ export function buildOwnerProfileView({
     badges: (Array.isArray(profile.badges) ? profile.badges : []).map((badge) => ({
       id: text(badge?.id || badge?._id || badge?.label),
       label: text(badge?.label),
+      // The competition's own artwork, stamped on when the badge was awarded; empty means a text chip.
+      imageUrl: text(badge?.imageUrl),
     })).filter(({ id, label }) => id && label),
   };
 }

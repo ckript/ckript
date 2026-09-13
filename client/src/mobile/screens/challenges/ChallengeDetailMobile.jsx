@@ -120,10 +120,59 @@ function SponsorCard({ sponsor }) {
   );
 }
 
+// The Results section between the deadline and the announcement — what is coming, when, and where
+// it will live. Same slot the laureates take once results are declared. An announcement date that
+// has already passed is not repeated as a promise.
+function ResultsPending({ competition, serverNow }) {
+  // The SERVER's clock decides whether the announcement date has passed — the payload always
+  // carries one, and reading the device clock during render is impure. Without a clock the date
+  // is shown as given rather than judged.
+  const serverTime = serverNow ? new Date(serverNow).getTime() : null;
+  const resultsAt = competition?.dates?.resultsAt || null;
+  const overdue = Boolean(resultsAt) && serverTime != null && new Date(resultsAt).getTime() <= serverTime;
+  const submitted = Number.isFinite(competition?.scriptsSubmitted) ? competition.scriptsSubmitted : null;
+  const when = resultsAt && !overdue ? ` on ${formatChallengeDate(resultsAt)}` : resultsAt ? ", as soon as the panel has finished" : "";
+  return (
+    <Card>
+      <CardBody>
+        <CardTitle as="h3">Judging in progress</CardTitle>
+        <CardText>
+          The writing window closed{competition?.dates?.endsAt ? ` on ${formatChallengeDate(competition.dates.endsAt)}` : ""}
+          {submitted != null ? `, and ${submitted} ${submitted === 1 ? "script is" : "scripts are"} with the panel` : ""}.
+          {" "}The winner, the runner-up and the special awards will be announced here{when}.
+        </CardText>
+        <CardText>Every honouree takes a permanent place in the Ckript Hall of Fame.</CardText>
+        <div className="ckm-challenge-detail__links"><Button size="sm" variant="tertiary" to="/hall-of-fame">Visit the Hall of Fame</Button></div>
+      </CardBody>
+    </Card>
+  );
+}
+
+// Declared results are also an induction, except for a challenge that ran by direct link only —
+// the Hall of Fame excludes hidden and private competitions by design, and saying otherwise here
+// would send its writers looking for a record that does not exist.
+function HallOfFameNote({ visibility }) {
+  const listed = !["hidden", "private"].includes(visibility);
+  return (
+    <Card>
+      <CardBody>
+        <CardTitle as="h3">Hall of Fame</CardTitle>
+        <CardText>
+          {listed
+            ? "Every winner and special-award recipient above now holds a permanent place in the Ckript Hall of Fame."
+            : "This challenge ran by direct link only, so its results stay on this page rather than in the public Hall of Fame."}
+        </CardText>
+        {listed ? <div className="ckm-challenge-detail__links"><Button size="sm" variant="tertiary" to="/hall-of-fame">Visit the Hall of Fame</Button></div> : null}
+      </CardBody>
+    </Card>
+  );
+}
+
 function Results({ results }) {
   const people = [
     results?.winner ? { person: results.winner, award: "winner" } : null,
     results?.runnerUp ? { person: results.runnerUp, award: "runner_up" } : null,
+    results?.secondRunnerUp ? { person: results.secondRunnerUp, award: "second_runner_up" } : null,
     ...list(results?.special).map((person) => ({ person, award: "special" })),
   ].filter(Boolean);
   if (!people.length) return <Card><CardBody><CardText>Results will be published here after judging.</CardText></CardBody></Card>;
@@ -238,7 +287,10 @@ export default function ChallengeDetailMobile({ user: suppliedUser = undefined, 
 
       {competition.theme?.title ? <DetailSection id="theme" title="The theme"><Card><CardBody><h3 className="ckm-challenge-detail__theme">{competition.theme.title}</h3>{competition.theme.brief ? <CardText>{competition.theme.brief}</CardText> : null}{list(competition.theme.allowedGenres).length ? <div className="ckm-challenge-detail__chips">{competition.theme.allowedGenres.map((genre) => <Badge key={genre}>{genre}</Badge>)}</div> : null}{competition.theme.guidelines ? <CardText>{competition.theme.guidelines}</CardText> : null}</CardBody></Card></DetailSection> : null}
 
-      {data.phase === "results" ? <DetailSection id="results" title="Results"><Results results={data.results} /></DetailSection> : null}
+      {/* Results — from the moment the window closes: what is coming during judging, the laureates
+          and their Hall of Fame induction once declared. */}
+      {data.phase === "judging" ? <DetailSection id="results" title="Results"><ResultsPending competition={competition} serverNow={data.serverNow} /></DetailSection> : null}
+      {data.phase === "results" ? <DetailSection id="results" title="Results"><Results results={data.results} /><HallOfFameNote visibility={competition.visibility} /></DetailSection> : null}
 
       <DetailSection id="about" title="About the challenge"><Card><CardBody>{competition.overview ? <CardText>{competition.overview}</CardText> : null}<p className="ckm-challenge-detail__criteria">Judged on</p><div className="ckm-challenge-detail__chips">{JUDGING_CRITERIA.map((item) => <Badge key={item}>{item}</Badge>)}</div></CardBody></Card></DetailSection>
 
@@ -246,7 +298,7 @@ export default function ChallengeDetailMobile({ user: suppliedUser = undefined, 
 
       <DetailSection id="timeline" title="Timeline"><Card><CardBody><Timeline steps={data.timeline} /></CardBody></Card></DetailSection>
 
-      <DetailSection id="prizes" title="Prizes"><div className="ckm-challenge-detail__grid"><PrizeCard title="Winner" items={competition.prizes?.winner} /><PrizeCard title="Runner-Up" items={competition.prizes?.runnerUp} /><PrizeCard title="Special awards" items={specialPrizes} /></div></DetailSection>
+      <DetailSection id="prizes" title="Prizes"><div className="ckm-challenge-detail__grid"><PrizeCard title="Winner" items={competition.prizes?.winner} /><PrizeCard title="Runner-Up" items={competition.prizes?.runnerUp} />{list(competition.prizes?.secondRunnerUp).length ? <PrizeCard title="Second Runner-Up" items={competition.prizes?.secondRunnerUp} /> : null}<PrizeCard title="Special awards" items={specialPrizes} /></div></DetailSection>
 
       {list(competition.judges).length ? <DetailSection id="judges" title="Judges"><div className="ckm-challenge-detail__grid">{competition.judges.map((judge, index) => <JudgeCard key={`${judge.name}-${index}`} judge={judge} />)}</div></DetailSection> : null}
 

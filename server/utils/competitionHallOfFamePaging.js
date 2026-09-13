@@ -60,4 +60,4 @@ export const HALL_OF_FAME_DETAIL_FIELDS = [
   "prizes",
   "judges",
   "sponsors",
-].join(" ");
+ "badgeImages"].join(" ");

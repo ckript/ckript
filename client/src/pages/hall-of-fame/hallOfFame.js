@@ -65,7 +65,7 @@ export function normalizeHallOfFameDetail(payload = {}) {
   if (!payload?.competition) return null;
   return {
     ...payload,
-    results: payload.results || { winner: null, runnerUp: null, special: [] },
+    results: payload.results || { winner: null, runnerUp: null, secondRunnerUp: null, special: [] },
     stats: payload.stats || {},
     featuredScripts: list(payload.featuredScripts),
     featuredScriptsPageInfo: {

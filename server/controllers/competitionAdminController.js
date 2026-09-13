@@ -1,16 +1,28 @@
 import mongoose from "mongoose";
-import Competition, { DEFAULT_PRIZES } from "../models/Competition.js";
+import Competition from "../models/Competition.js";
+import {
+  DEFAULT_GRANTS,
+  composePrizeLines,
+  formatCash,
+  resolveGrants,
+  sanitizeGrants,
+  sanitizeSpecialAwards,
+  specialGrantFor,
+  badgeImageFor,
+  sanitizeBadgeImages,
+} from "../utils/competitionRewards.js";
+import { tryCertificateAttachment } from "../utils/competitionCertificateMail.js";
 import CompetitionEntry from "../models/CompetitionEntry.js";
 import Script from "../models/Script.js";
 import User from "../models/User.js";
 import { recordGrant } from "../utils/ledger.js";
 import { planAmountMinor } from "../utils/planCheckout.js";
 import { WRITER_PLAN_KEY } from "../config/pricing.js";
-import { createNotification, sendEmailNotification } from "../utils/notify.js";
+import { createNotification, resolveClientBaseUrl, sendEmailNotification } from "../utils/notify.js";
+import { buildResultMail } from "../utils/competitionMail.js";
 import { getCompetitionPhase } from "../utils/competitionPhase.js";
 import { runEntryAIProcessing } from "./competitionAI.js";
 import { getReferralProgress, tiersFor, referralWindow } from "../utils/competitionReferrals.js";
-import { escapeHtml } from "../utils/escapeHtml.js";
 import { uploadToCloudinary } from "../config/cloudinary.js";
 
 // Reward definitions. Mirrors WRITER_GOLD_MODEL / WRITER_SILVER_MODEL in paymentController.js — a
@@ -29,11 +41,11 @@ const TIER_RANK = { none: 0, standard: 1, writer_silver: 2, film_industry_profes
  *   • demotion — a Gold subscriber awarded Runner-Up would be knocked down to Silver.
  * So the 30 days are added to whatever they already have, and the tier only moves up.
  */
-const subscriptionGrant = (plan, now, reference, existing = {}) => {
+const subscriptionGrant = (plan, now, reference, existing = {}, days = 30) => {
   const currentExpiry = existing?.accessExpiresAt ? new Date(existing.accessExpiresAt).getTime() : 0;
   // Extend from the later of "now" and their existing expiry, so paid time is never lost.
   const base = Math.max(now.getTime(), currentExpiry || 0);
-  const expiresAt = new Date(base + THIRTY_DAYS_MS);
+  const expiresAt = new Date(base + (Number(days) > 0 ? Number(days) * 24 * 3600_000 : THIRTY_DAYS_MS));
 
   const prizeTier = plan === "gold" ? "writer_gold" : "writer_silver";
   const prizePlan = plan === "gold" ? "gold" : "silver";
@@ -57,11 +69,11 @@ const subscriptionGrant = (plan, now, reference, existing = {}) => {
 };
 
 // Reads the winner's current plan first so the grant can extend rather than replace it.
-const grantSubscription = async (userId, plan, now, competitionId, competitionName = "") => {
+const grantSubscription = async (userId, plan, now, competitionId, competitionName = "", days = 30) => {
   const user = await User.findById(userId).select("subscription");
   await User.updateOne(
     { _id: userId },
-    { $set: subscriptionGrant(plan, now, `competition:${competitionId}`, user?.subscription) },
+    { $set: subscriptionGrant(plan, now, `competition:${competitionId}`, user?.subscription, days) },
   );
 
   // A prize plan is revenue the platform chose not to earn, and it reaches the winner through the
@@ -70,11 +82,12 @@ const grantSubscription = async (userId, plan, now, competitionId, competitionNa
   await recordGrant({
     kind: "plan_subscription",
     user: userId,
-    listPriceMinor: planAmountMinor(WRITER_PLAN_KEY[plan], "INR", "monthly") || 0,
+    // The monthly list price, scaled to the days actually granted — the revenue foregone.
+    listPriceMinor: planAmountMinor(WRITER_PLAN_KEY[plan], "INR", "monthly") * (Math.max(1, Number(days) || 30) / 30) || 0,
     reason: "competition prize",
     subjectType: "Competition",
     subjectId: competitionId,
-    label: competitionName ? `Writer ${plan} — ${competitionName}` : `Writer ${plan} (competition prize)`,
+    label: competitionName ? `Writer ${plan} (${days} days) — ${competitionName}` : `Writer ${plan} (${days} days, competition prize)`,
     source: "competitionAdminController.grantSubscription",
     metadata: { planKey: WRITER_PLAN_KEY[plan], competitionId: String(competitionId) },
   });
@@ -83,6 +96,7 @@ const grantSubscription = async (userId, plan, now, competitionId, competitionNa
 const BADGES = {
   winner: { id: "challenge_winner", label: "Global Script Challenge Winner" },
   runner_up: { id: "challenge_runner_up", label: "Global Script Challenge Runner-Up" },
+  second_runner_up: { id: "challenge_second_runner_up", label: "Global Script Challenge Second Runner-Up" },
   special: { id: "challenge_special", label: "Global Script Challenge Special Award" },
   participant: { id: "challenge_participant", label: "Global Script Challenge Participant" },
 };
@@ -212,7 +226,7 @@ const CONTENT_FIELDS = [
   "theme", "overview", "eligibility", "format", "prizes", "detailedPrizes", "rules",
   "faq", "judges", "sponsors", "communityLinks", "resources",
   "bannerUrl", "mobileBannerUrl", "cardThumbnailUrl", "ogImageUrl", "logoUrl", "backgroundImageUrl", "gallery",
-  "cardConfig", "prizePool", "entryFee", "visibility", "referralTiers",
+  "cardConfig", "prizePool", "entryFee", "visibility", "referralTiers", "badgeImages",
 ];
 
 /**
@@ -235,9 +249,28 @@ const sanitizeReferralTiers = (rows) => {
     .map((row) => ({ ...row, label: row.label || row.id }));
 };
 
+/**
+ * The prize config as the editor sends it: free-text extras trimmed, special awards and the
+ * per-placing grants made valid field by field (utils/competitionRewards.js) — so a half-typed row
+ * never reaches the schema as an opaque 500, and a grant can never name a plan the platform does
+ * not sell.
+ */
+const sanitizePrizes = (raw = {}) => {
+  const lines = (list) => (Array.isArray(list) ? list.map((s) => String(s || "").trim()).filter(Boolean) : []);
+  return {
+    winner: lines(raw?.winner),
+    runnerUp: lines(raw?.runnerUp),
+    secondRunnerUp: lines(raw?.secondRunnerUp),
+    special: sanitizeSpecialAwards(raw?.special),
+    grants: sanitizeGrants(raw?.grants),
+  };
+};
+
 // Fields needing shaping before they hit the schema.
 const normalizeContent = (payload) => {
   if (payload.referralTiers !== undefined) payload.referralTiers = sanitizeReferralTiers(payload.referralTiers);
+  if (payload.prizes !== undefined) payload.prizes = sanitizePrizes(payload.prizes);
+  if (payload.badgeImages !== undefined) payload.badgeImages = sanitizeBadgeImages(payload.badgeImages);
   return payload;
 };
 
@@ -253,11 +286,11 @@ export const adminCreateCompetition = async (req, res) => {
     for (const field of CONTENT_FIELDS) {
       if (field !== "name" && rest[field] !== undefined) payload[field] = rest[field];
     }
-    // Seed the standard prize lists so an admin never has to retype them.
+    // Seed the platform's standard grants so an admin never has to configure them from nothing.
+    // The free-text extras start empty: the grants now say what the platform delivers.
     payload.prizes = {
-      winner: payload.prizes?.winner?.length ? payload.prizes.winner : DEFAULT_PRIZES.winner,
-      runnerUp: payload.prizes?.runnerUp?.length ? payload.prizes.runnerUp : DEFAULT_PRIZES.runnerUp,
-      special: payload.prizes?.special || [],
+      ...(payload.prizes || {}),
+      grants: payload.prizes?.grants || DEFAULT_GRANTS,
     };
 
     const competition = await Competition.create(normalizeContent(payload));
@@ -425,7 +458,9 @@ export const adminListEntries = async (req, res) => {
       .sort({ submittedAt: 1, createdAt: 1 })
       .lean();
 
-    return res.json({ entries, phase: getCompetitionPhase(competition), competition });
+    // `rewardLines` is what the declare dialog quotes back to the admin — composed by the same
+    // function the public pages print from, so the confirmation and the promise cannot differ.
+    return res.json({ entries, phase: getCompetitionPhase(competition), competition, rewardLines: composePrizeLines(competition) });
   } catch (error) {
     console.error("[competition admin] entries failed:", error?.message || error);
     return res.status(500).json({ message: "Failed to load entries." });
@@ -586,18 +621,39 @@ const featureScript = async (scriptId, extra = {}) => {
   await Script.updateOne({ _id: scriptId }, { $set: { isFeatured: true, ...extra } });
 };
 
-const notifyEntry = async (entry, competitionName, message, subject) => {
+/**
+ * The in-app notification and the email for one entrant's result.
+ *
+ * The notification keeps the one-line `message`. The email is the full results document from
+ * competitionMail.js — the prize lines the competition page promised, the badge artwork, the
+ * script's numbers, the certificate note, the links — so it reads like a result rather than a
+ * receipt. With `certificate`, the entrant's certificate PDF rides along, built by the same
+ * generator as the dashboard download so the two never differ. Best-effort at every step: a
+ * certificate that fails to render sends the mail without it, and a mail that fails to send never
+ * stops the declare.
+ */
+const notifyEntry = async (entry, competition, message, subject, { certificate = null, submittedCount = 0 } = {}) => {
   const user = await User.findById(entry.userId).select("name email");
   if (!user) return;
   await createNotification({ userId: entry.userId, type: "competition", message });
+  const attachment = certificate
+    ? await tryCertificateAttachment({ competition, entry, writerName: user.name, declaredAt: certificate.declaredAt })
+    : null;
+  const mail = buildResultMail({
+    competition,
+    entry,
+    writerName: user.name,
+    baseUrl: resolveClientBaseUrl(),
+    certificateAttached: Boolean(attachment),
+    submittedCount,
+  });
   await sendEmailNotification({
     to: user.email,
     subject,
-    // Both halves are free text somebody typed — the writer's display name, and a message carrying
-    // the competition name and the admin's special-award title — so neither can go into HTML raw.
-    // Subject and text are not HTML; escaping those would just show the entities to the reader.
-    html: `<p>Hi ${escapeHtml(user.name || "there")},</p><p>${escapeHtml(message)}</p>`,
-    text: message,
+    html: mail.html,
+    text: mail.text,
+    preheader: mail.preheader,
+    attachments: attachment ? [attachment] : [],
   }).catch(() => { /* email is best-effort */ });
 };
 
@@ -615,7 +671,7 @@ export const adminDeclareResults = async (req, res) => {
       });
     }
 
-    const { winnerEntryId, runnerUpEntryId, specialAwards = [] } = req.body || {};
+    const { winnerEntryId, runnerUpEntryId, secondRunnerUpEntryId, specialAwards = [] } = req.body || {};
     if (!winnerEntryId) return res.status(400).json({ message: "Select a winner before declaring results." });
     if (runnerUpEntryId && String(runnerUpEntryId) === String(winnerEntryId)) {
       return res.status(400).json({ message: "The winner and runner-up must be different entries." });
@@ -643,6 +699,21 @@ export const adminDeclareResults = async (req, res) => {
       return res.status(400).json({ message: "The runner-up must be a submitted entry." });
     }
 
+    const grants = resolveGrants(competition);
+    const secondRunnerUp = secondRunnerUpEntryId ? byId.get(String(secondRunnerUpEntryId)) : null;
+    if (secondRunnerUpEntryId && !grants.secondRunnerUp.enabled) {
+      return res.status(400).json({ message: "This competition has no second runner-up tier. Switch it on under Prizes, save, then declare." });
+    }
+    if (secondRunnerUpEntryId && !secondRunnerUp) {
+      return res.status(400).json({ message: "The selected second runner-up is not an entry in this competition." });
+    }
+    if (secondRunnerUp && (String(secondRunnerUp._id) === String(winner._id) || (runnerUp && String(secondRunnerUp._id) === String(runnerUp._id)))) {
+      return res.status(400).json({ message: "The second runner-up must be a different entry from the winner and the runner-up." });
+    }
+    if (secondRunnerUp && !hasSubmitted(secondRunnerUp)) {
+      return res.status(400).json({ message: "The second runner-up must be a submitted entry." });
+    }
+
     const specials = [];
     for (const award of Array.isArray(specialAwards) ? specialAwards : []) {
       const entry = byId.get(String(award?.entryId));
@@ -653,7 +724,7 @@ export const adminDeclareResults = async (req, res) => {
       if (specials.some((s) => String(s.entry._id) === String(entry._id))) {
         return res.status(400).json({ message: "The same entry cannot receive two special awards." });
       }
-      if (String(entry._id) === String(winner._id) || (runnerUp && String(entry._id) === String(runnerUp._id))) {
+      if (String(entry._id) === String(winner._id) || (runnerUp && String(entry._id) === String(runnerUp._id)) || (secondRunnerUp && String(entry._id) === String(secondRunnerUp._id))) {
         return res.status(400).json({ message: "An entry cannot hold both a placing and a special award." });
       }
       // Default AFTER trimming, not before. `" "` is truthy, so defaulting first skipped the
@@ -664,55 +735,113 @@ export const adminDeclareResults = async (req, res) => {
 
     const now = new Date();
     const name = competition.name;
-    const counts = { winners: 0, runnerUp: 0, special: 0, participants: 0 };
+    const counts = { winners: 0, runnerUp: 0, secondRunnerUp: 0, special: 0, participants: 0, cashOwedMinor: 0 };
+
+    /**
+     * Apply one grant — a placing's, or a special award's — to an entry. Everything is what the
+     * competition CONFIGURED under Prizes (utils/competitionRewards.js), not a fixed set: the plan
+     * and its days, featured placement, the AI trailer, and a cash amount. Each piece goes through
+     * grantOnce under its own key, so a retried declare completes what a crashed one started
+     * without doubling any of it. The badge is not configurable: a placing is its badge.
+     *
+     * Cash is owed, not moved. The platform never pays it, so it enters the finance ledger as a
+     * grant carrying the amount as revenue foregone, labelled for the placing, and is settled by
+     * Ckript outside the platform.
+     */
+    const applyGrant = async (entry, grant, { badgeKey, badge, placing, cashLabel }) => {
+      if (grant.plan !== "none") {
+        await grantOnce(entry, `subscription_${grant.plan}`, () =>
+          grantSubscription(entry.userId, grant.plan, now, competition._id, name, grant.planDays));
+      }
+      await grantOnce(entry, badgeKey, () => awardBadge(entry.userId, badge, competition._id));
+      // isFeatured is what getFeaturedScripts reads; services.aiTrailer routes the script into the
+      // existing admin trailer pipeline rather than a second competition-only one.
+      if (grant.featured) await grantOnce(entry, "featured_script", () => featureScript(entry.scriptId));
+      if (grant.aiTrailer) await grantOnce(entry, "ai_trailer", () => featureScript(entry.scriptId, { "services.aiTrailer": true }));
+      if (grant.cashMinor > 0) {
+        await grantOnce(entry, "cash_prize", () => recordGrant({
+          kind: "cash_prize",
+          user: entry.userId,
+          listPriceMinor: grant.cashMinor,
+          currency: grant.cashCurrency,
+          reason: "competition cash prize — payable by Ckript directly, outside the platform",
+          subjectType: "Competition",
+          subjectId: competition._id,
+          label: `${cashLabel} cash prize — ${name}`,
+          source: "competitionAdminController.adminDeclareResults",
+          metadata: { competitionId: String(competition._id), entryId: String(entry._id), placing },
+        }));
+        counts.cashOwedMinor += grant.cashMinor;
+      }
+    };
+    // The competition's own artwork rides on the badge itself, so the profile keeps it for good.
+    const withBadgeImage = (badge, imageUrl) => (imageUrl ? { ...badge, imageUrl } : badge);
+    const cashSentence = (grant) => (grant.cashMinor > 0
+      ? ` The ${formatCash(grant.cashMinor, grant.cashCurrency)} cash prize will be paid to you directly by Ckript.`
+      : "");
+    // What every results mail carries: the certificate, and the size of the field it was judged in.
+    const resultNotice = { certificate: { declaredAt: now }, submittedCount: entries.filter(hasSubmitted).length };
 
     // Winner ────────────────────────────────────────────────────────────────
     winner.result.award = "winner";
-    await grantOnce(winner, "subscription_gold", () =>
-      grantSubscription(winner.userId, "gold", now, competition._id, name));
-    await grantOnce(winner, "badge_winner", () => awardBadge(winner.userId, BADGES.winner, competition._id));
-    // isFeatured is what getFeaturedScripts reads; services.aiTrailer routes it into the existing
-    // admin trailer pipeline rather than a second competition-only one.
-    await grantOnce(winner, "featured_script", () => featureScript(winner.scriptId, { "services.aiTrailer": true }));
+    await applyGrant(winner, grants.winner, { badgeKey: "badge_winner", badge: withBadgeImage(BADGES.winner, badgeImageFor(competition, "winner")), placing: "winner", cashLabel: "Winner" });
     winner.status = "judged";
     await winner.save();
     counts.winners = 1;
-    await grantOnce(winner, "notified", () => notifyEntry(winner, name, `🏆 You won the ${name}! Your rewards have been added to your account.`, `🏆 You won the ${name}`));
+    await grantOnce(winner, "notified", () => notifyEntry(winner, competition, `🏆 You won the ${name}! Your rewards have been added to your account.${cashSentence(grants.winner)}`, `🏆 You won the ${name}`, resultNotice));
     await winner.save();
 
     // Runner-up ─────────────────────────────────────────────────────────────
     if (runnerUp) {
       runnerUp.result.award = "runner_up";
-      await grantOnce(runnerUp, "subscription_silver", () =>
-        grantSubscription(runnerUp.userId, "silver", now, competition._id, name));
-      await grantOnce(runnerUp, "badge_runner_up", () => awardBadge(runnerUp.userId, BADGES.runner_up, competition._id));
-      await grantOnce(runnerUp, "featured_script", () => featureScript(runnerUp.scriptId));
+      await applyGrant(runnerUp, grants.runnerUp, { badgeKey: "badge_runner_up", badge: withBadgeImage(BADGES.runner_up, badgeImageFor(competition, "runner_up")), placing: "runner_up", cashLabel: "Runner-Up" });
       runnerUp.status = "judged";
       await runnerUp.save();
       counts.runnerUp = 1;
-      await grantOnce(runnerUp, "notified", () => notifyEntry(runnerUp, name, `You placed Runner-Up in the ${name}! Your rewards have been added to your account.`, `Runner-Up — ${name}`));
+      await grantOnce(runnerUp, "notified", () => notifyEntry(runnerUp, competition, `You placed Runner-Up in the ${name}! Your rewards have been added to your account.${cashSentence(grants.runnerUp)}`, `Runner-Up — ${name}`, resultNotice));
       await runnerUp.save();
+    }
+
+    // Second runner-up ──────────────────────────────────────────────────────
+    if (secondRunnerUp) {
+      secondRunnerUp.result.award = "second_runner_up";
+      await applyGrant(secondRunnerUp, grants.secondRunnerUp, { badgeKey: "badge_second_runner_up", badge: withBadgeImage(BADGES.second_runner_up, badgeImageFor(competition, "second_runner_up")), placing: "second_runner_up", cashLabel: "Second Runner-Up" });
+      secondRunnerUp.status = "judged";
+      await secondRunnerUp.save();
+      counts.secondRunnerUp = 1;
+      await grantOnce(secondRunnerUp, "notified", () => notifyEntry(secondRunnerUp, competition, `You placed Second Runner-Up in the ${name}! Your rewards have been added to your account.${cashSentence(grants.secondRunnerUp)}`, `Second Runner-Up — ${name}`, resultNotice));
+      await secondRunnerUp.save();
     }
 
     // Special awards ────────────────────────────────────────────────────────
     for (const { entry, title } of specials) {
       entry.result.award = "special";
       entry.result.specialTitle = title;
-      // The badge carries the award's real name — "Best Dialogue", not "Special Award". The badge
-      // ID stays `challenge_special` so the existing badge system, and awardBadge's
-      // (id, competitionId) dedupe key, are untouched; only the human-readable label changes.
-      // An older entry with no title falls back to the generic label.
-      await grantOnce(entry, "badge_special", () =>
-        awardBadge(entry.userId, { ...BADGES.special, label: title || BADGES.special.label }, competition._id));
+      // What the award carries beyond its badge is whatever was configured under its title on the
+      // competition; a title typed fresh at declare time carries the badge alone. The badge keeps
+      // the `challenge_special` id — the badge system and awardBadge's (id, competitionId) dedupe
+      // key are untouched — and only its human-readable label takes the award's real name.
+      const special = specialGrantFor(competition, title);
+      await applyGrant(entry, { ...special, aiTrailer: false }, {
+        badgeKey: "badge_special",
+        badge: withBadgeImage({ ...BADGES.special, label: title || BADGES.special.label }, badgeImageFor(competition, "special", title)),
+        placing: "special",
+        cashLabel: title,
+      });
       entry.status = "judged";
       await entry.save();
       counts.special += 1;
-      await grantOnce(entry, "notified", () => notifyEntry(entry, name, `You received the "${title}" award in the ${name}!`, `${title} — ${name}`));
+      await grantOnce(entry, "notified", () => notifyEntry(entry, competition, `You received the "${title}" award in the ${name}!${cashSentence(special)}`, `${title} — ${name}`, resultNotice));
       await entry.save();
     }
 
     // Everyone else who actually submitted ──────────────────────────────────
-    const placed = new Set([String(winner._id), runnerUp ? String(runnerUp._id) : "", ...specials.map((s) => String(s.entry._id))]);
+    const placed = new Set([
+      String(winner._id),
+      runnerUp ? String(runnerUp._id) : "",
+      secondRunnerUp ? String(secondRunnerUp._id) : "",
+      ...specials.map((s) => String(s.entry._id)),
+    ]);
     const completion = `Thank you for competing in the ${name}. Finishing a script in 48 hours is a real achievement — your AI evaluation and story materials are yours to keep, and your script stays in your Ckript library.`;
 
     for (const entry of entries) {
@@ -723,11 +852,11 @@ export const adminDeclareResults = async (req, res) => {
       if (!hasSubmitted(entry)) continue;
 
       entry.result.award = "participant";
-      await grantOnce(entry, "badge_participant", () => awardBadge(entry.userId, BADGES.participant, competition._id));
+      await grantOnce(entry, "badge_participant", () => awardBadge(entry.userId, withBadgeImage(BADGES.participant, badgeImageFor(competition, "participant")), competition._id));
       entry.status = "judged";
       await entry.save();
       counts.participants += 1;
-      await grantOnce(entry, "notified", () => notifyEntry(entry, name, completion, `${name} — results are in`));
+      await grantOnce(entry, "notified", () => notifyEntry(entry, competition, completion, `${name} — results are in`, resultNotice));
       await entry.save();
     }
 

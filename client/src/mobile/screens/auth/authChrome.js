@@ -17,38 +17,19 @@ export const AUTH_SHELL_MODE = MOBILE_SHELL_MODE.PUBLIC;
    example — and takes no slot overrides: it wants exactly what the mode says. */
 export const SIGNUP_SHELL_MODE = MOBILE_SHELL_MODE.FLOW;
 
-/* The webfont pair the desktop auth surfaces already load, under the SAME
- * element id they use.
+/*
+ * NO FONT LOADER HERE, AND THAT IS THE POINT.
  *
- * Sharing the id is the point: a phone that has been on the landing page has
- * these fonts already, and a second <link> for the same two families would be a
- * duplicate request on the connection least able to afford one. A <link> rather
- * than an @import in Auth.css for the reason AuthModal.jsx documents at length —
- * a stylesheet that begins with @import withholds ALL of its rules until the
- * import resolves, so the screen would lay out unstyled while the fonts fly.
+ * These screens used to inject the desktop auth pair (Baskervville + PT Serif)
+ * at runtime, because the surface they rendered was carried across from the
+ * desktop modal. The iOS redesign sets them in the app's own two families —
+ * Spectral for display, IBM Plex Sans for everything else — and index.html
+ * already loads both, plus Material Symbols, for every mobile screen.
+ *
+ * So the third-party request this file used to make on the connection least
+ * able to afford one is gone, and account entry now renders in the fonts the
+ * rest of the app is already holding.
  */
-const FONT_LINK_ID = "ckript-authmodal-fonts";
-
-export function ensureAuthFonts() {
-  if (typeof document === "undefined" || document.getElementById(FONT_LINK_ID)) return;
-
-  const preconnect = document.createElement("link");
-  preconnect.rel = "preconnect";
-  preconnect.href = "https://fonts.googleapis.com";
-
-  const preconnectStatic = document.createElement("link");
-  preconnectStatic.rel = "preconnect";
-  preconnectStatic.href = "https://fonts.gstatic.com";
-  preconnectStatic.crossOrigin = "anonymous";
-
-  const sheet = document.createElement("link");
-  sheet.id = FONT_LINK_ID;
-  sheet.rel = "stylesheet";
-  sheet.href =
-    "https://fonts.googleapis.com/css2?family=Baskervville:ital@0;1&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap";
-
-  document.head.append(preconnect, preconnectStatic, sheet);
-}
 
 /*
  * The return path an auth screen was given, or "".

@@ -3,6 +3,21 @@ import { getOTPExpirySeconds } from "./otpHelper.js";
 import mailFrom from "./mailFrom.js";
 import { CONTACTS, signatureHtml, signatureText } from "./companyContacts.js";
 import { htmlToPlainText } from "./htmlText.js";
+import { escapeHtml } from "./escapeHtml.js";
+import {
+  AUTOMATED_NOTICE,
+  button,
+  code,
+  facts,
+  fineprint,
+  fragment,
+  heading,
+  linkFallback,
+  list,
+  panel,
+  paragraphs,
+  renderMailDocument,
+} from "./mailDocument.js";
 
 let cachedTransporter = null;
 
@@ -151,48 +166,17 @@ export const sendOTPEmail = async (email, name, otp) => {
       from: mailFrom(),
       to: email,
       subject: 'Verify Your Email - ckript',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .otp-box { background: white; border: 2px dashed #1e3a5f; padding: 20px; margin: 20px 0; text-align: center; border-radius: 8px; }
-            .otp-code { font-size: 32px; font-weight: bold; color: #1e3a5f; letter-spacing: 8px; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-            .button { display: inline-block; background: #1e3a5f; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Welcome to ckript!</h1>
-            </div>
-            <div class="content">
-              <p>Hi ${name},</p>
-              <p>Thank you for signing up with ckript! To complete your registration, please verify your email address using the OTP code below:</p>
-              
-              <div class="otp-box">
-                <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">Your verification code is:</p>
-                <div class="otp-code">${otp}</div>
-              </div>
-              
-              <p>This code will expire in <strong>${otpValidityLabel}</strong>.</p>
-              <p>If you didn't create an account with ckript, please ignore this email.</p>
-              
-              <p>Best regards,<br>Team ${CONTACTS.name}</p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Verify your email",
+        preheader: `Your verification code is ${otp}.`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "Welcome to Ckript", title: "Verify your email.", subtitle: "One code, and your account is yours." }),
+          paragraphs(`Hi ${name},\n\nThank you for signing up with Ckript. To complete your registration, enter the code below where you signed up.`),
+          code(otp, "Your verification code"),
+          paragraphs(`This code expires in ${otpValidityLabel}.\n\nIf you didn't create an account with Ckript, you can safely ignore this email.`),
+        ],
+      }),
       text: `Hi ${name},\n\nThank you for signing up with ckript! Your verification code is: ${otp}\n\nThis code will expire in ${otpValidityLabel}.\n\nIf you didn't create an account with ckript, please ignore this email.\n\nBest regards,\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -232,51 +216,18 @@ export const sendPasswordResetOTPEmail = async (email, name, otp, validitySecond
       from: mailFrom(),
       to: email,
       subject: 'Reset your ckript password',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .otp-box { background: white; border: 2px dashed #1e3a5f; padding: 20px; margin: 20px 0; text-align: center; border-radius: 8px; }
-            .otp-code { font-size: 32px; font-weight: bold; color: #1e3a5f; letter-spacing: 8px; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-            .warn { background:#fff7ed; border-left:4px solid #f97316; padding:10px 14px; border-radius:6px; color:#92400e; font-size:13px; margin-top:16px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Password Reset Request</h1>
-            </div>
-            <div class="content">
-              <p>Hi ${name || 'there'},</p>
-              <p>We received a request to reset the password for your ckript account. Use the verification code below to continue:</p>
-
-              <div class="otp-box">
-                <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">Your password reset code is:</p>
-                <div class="otp-code">${otp}</div>
-              </div>
-
-              <p>This code will expire in <strong>${otpValidityLabel}</strong>.</p>
-
-              <div class="warn">
-                If you did not request a password reset, you can safely ignore this email — your password will remain unchanged.
-              </div>
-
-              <p style="margin-top:16px;">Best regards,<br>Team ${CONTACTS.name}</p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Reset your Ckript password",
+        preheader: `Your password reset code is ${otp}.`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "Account security", title: "Reset your password.", subtitle: "Use the code below to choose a new one." }),
+          paragraphs(`Hi ${name || "there"},\n\nWe received a request to reset the password for your Ckript account. Enter this code to continue:`),
+          code(otp, "Your password reset code"),
+          paragraphs(`This code expires in ${otpValidityLabel}.`),
+          panel({ eyebrow: "Didn't request this?", text: "You can safely ignore this email — your password will remain unchanged." }),
+        ],
+      }),
       text: `Hi ${name || 'there'},\n\nWe received a request to reset the password for your ckript account.\n\nYour password reset code is: ${otp}\n\nThis code will expire in ${otpValidityLabel}.\n\nIf you didn't request a password reset, ignore this email — your password will remain unchanged.\n\nBest regards,\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -303,42 +254,17 @@ export const sendWelcomeEmail = async (email, name) => {
       from: mailFrom(),
       to: email,
       subject: 'Welcome to ckript!',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎉 Welcome to ckript!</h1>
-            </div>
-            <div class="content">
-              <p>Hi ${name},</p>
-              <p>Your email has been successfully verified! You're now part of the ckript community.</p>
-              <p>Get started by:</p>
-              <ul>
-                <li>Completing your profile</li>
-                <li>Uploading your first script</li>
-                <li>Connecting with industry professionals</li>
-              </ul>
-              <p>We're excited to have you on board!</p>
-              <p>Best regards,<br>Team ${CONTACTS.name}</p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Welcome to Ckript",
+        preheader: "Your email is verified. Here is where to begin.",
+        blocks: [
+          heading({ eyebrow: "You're in", title: "Welcome to Ckript.", subtitle: "Your email is verified, and your desk is ready." }),
+          paragraphs(`Hi ${name},\n\nYou're now part of the Ckript community. Three good places to begin:`),
+          list(["Complete your profile", "Upload your first script", "Connect with industry professionals"]),
+          paragraphs("We're excited to have you on board."),
+          button({ text: "Open your dashboard", url: buildClientUrl("/dashboard") }),
+        ],
+      }),
       text: `Hi ${name},\n\nYour email has been successfully verified! You're now part of the ckript community.\n\nWe're excited to have you on board!\n\nBest regards,\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -365,56 +291,16 @@ export const sendInvestorWelcomeEmail = async (email, name) => {
       from: mailFrom(),
       to: email,
       subject: 'Welcome to ckript — Your Gateway to Exceptional Scripts',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.5; color: #111827; margin: 0; padding: 0; background: #fafafa; }
-            .container { max-width: 580px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.05); border: 1px solid #f3f4f6; }
-            .header { background: #000000; color: white; padding: 48px 40px; text-align: left; }
-            .badge { display: inline-block; margin-bottom: 20px; color: #10b981; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 6px 12px; border-radius: 4px; background: rgba(16, 185, 129, 0.1); }
-            .header h1 { margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; }
-            .content { padding: 40px; }
-            .greeting { font-size: 18px; font-weight: 600; margin-bottom: 24px; color: #111827; }
-            .drama-text { font-size: 24px; font-weight: 700; color: #111827; line-height: 1.3; margin: 0 0 24px; letter-spacing: -0.5px; }
-            .sub-text { font-size: 15px; color: #4b5563; margin-bottom: 32px; }
-            .cta-wrapper { text-align: left; margin: 40px 0 20px; }
-            .cta { background: #111827; color: #ffffff; text-decoration: none; padding: 16px 32px; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block; transition: background 0.2s; }
-            .footer { padding: 32px 40px; background: #f9fafb; color: #6b7280; font-size: 12px; border-top: 1px solid #f3f4f6; }
-            .footer a { color: #111827; text-decoration: none; font-weight: 500; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <div class="badge">INDUSTRY ACCESS GRANTED</div>
-              <h1>The screen is waiting.</h1>
-            </div>
-            <div class="content">
-              <div class="greeting">Hi ${name},</div>
-              
-              <div class="drama-text">
-                Every masterpiece starts with a single line.<br/>
-                Your next big project is hiding in plain sight.
-              </div>
-              
-              <div class="sub-text">
-                Welcome to <strong>ckript</strong>. You now have exclusive access to a curated marketplace of production-ready stories, brilliant writers, and untapped intellectual property. No middlemen. Just you and the script.
-              </div>
-
-              <div class="cta-wrapper">
-                <a href="${buildClientUrl('/search')}" class="cta">Discover Scripts</a>
-              </div>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>If you have any questions, reply to this email. We're here to help.</p>
-              <p>© ${new Date().getFullYear()} ckript. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Welcome to Ckript",
+        preheader: "Every masterpiece starts with a single line.",
+        blocks: [
+          heading({ eyebrow: "Industry access granted", title: "The screen is waiting.", subtitle: "Every masterpiece starts with a single line. Your next big project is hiding in plain sight." }),
+          paragraphs(`Hi ${name},\n\nWelcome to Ckript. You now have exclusive access to a curated marketplace of production-ready stories, brilliant writers, and untapped intellectual property. No middlemen. Just you and the script.`),
+          button({ text: "Discover scripts", url: buildClientUrl("/search") }),
+          fineprint("If you have any questions, reply to this email. We're here to help."),
+        ],
+      }),
       text: `Hi ${name},\n\nEvery masterpiece starts with a single line. Your next big project is hiding in plain sight.\n\nWelcome to ckript. You now have exclusive access to a curated marketplace of production-ready stories, brilliant writers, and untapped intellectual property. No middlemen. Just you and the script.\n\nDiscover Scripts: ${buildClientUrl('/search')}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -440,44 +326,18 @@ export const sendInvestorApprovalEmail = async (email, name, options = {}) => {
       from: mailFrom(),
       to: email,
       subject: '✅ Your Investor Account Has Been Approved — ckript',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #d1fae5; color: #065f46; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">🎉 You're Approved!</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${name}</strong>,</p>
-              <div><span class="badge">✅ Account Approved</span></div>
-              <p>Great news! Your investor account on <strong>ckript</strong> has been reviewed and <strong>approved</strong> by our admin team.</p>
-              <p>You can now log in and start exploring investment opportunities in creative projects.</p>
-              <div style="text-align:center">
-                <a href="${loginUrl}" class="button">Log In to ckript</a>
-              </div>
-              <p style="color:#666;font-size:13px">If the button doesn't work, copy and paste this link into your browser:<br/><a href="${loginUrl}" style="color:#1e3a5f">${loginUrl}</a></p>
-              <p>Welcome aboard,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Your investor account is approved",
+        preheader: "Your investor account has been reviewed and approved.",
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "Account approved", title: "You're approved.", subtitle: "Your investor account has been reviewed and approved by our team." }),
+          paragraphs(`Hi ${name},\n\nGreat news. You can now log in and start exploring investment opportunities in creative projects.`),
+          button({ text: "Log in to Ckript", url: loginUrl }),
+          linkFallback(loginUrl),
+          paragraphs("Welcome aboard."),
+        ],
+      }),
       text: `Hi ${name},\n\nGreat news! Your investor account on ckript has been approved.\n\nYou can now log in at: ${loginUrl}\n\nWelcome aboard,\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -504,46 +364,19 @@ export const sendInvestorRejectionEmail = async (email, name, reason, options = 
       from: mailFrom(),
       to: email,
       subject: 'Update on Your Investor Profile Review — ckript',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #fee2e2; color: #991b1b; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .reason { background: #fff; border-left: 4px solid #dc2626; padding: 12px 14px; border-radius: 6px; margin: 12px 0; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">Profile Review Update</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${name}</strong>,</p>
-              <div><span class="badge">Profile Not Approved</span></div>
-              <p>Thank you for applying as an investor on <strong>ckript</strong>. After review, your profile was not approved at this time.</p>
-              ${safeReason ? `<p><strong>Review reason:</strong></p><div class="reason">${safeReason}</div>` : ""}
-              <p>You may update your profile details and contact our support team for guidance.</p>
-              <div style="text-align:center">
-                <a href="${loginUrl}" class="button">Open ckript Login</a>
-              </div>
-              <p style="color:#666;font-size:13px">Need help? Reach us at ${CONTACTS.support}</p>
-              <p>Regards,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Update on your investor profile review",
+        preheader: "After review, your profile was not approved at this time.",
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "Profile review", title: "Profile review update.", subtitle: "Your investor profile was not approved at this time." }),
+          paragraphs(`Hi ${name},\n\nThank you for applying as an investor on Ckript. After review, your profile was not approved at this time.`),
+          safeReason ? panel({ eyebrow: "Review reason", text: safeReason }) : "",
+          paragraphs("You may update your profile details and contact our support team for guidance."),
+          button({ text: "Open Ckript login", url: loginUrl }),
+          fineprint(`Need help? Reach us at ${CONTACTS.support}`),
+        ],
+      }),
       text: `Hi ${name},\n\nYour investor profile was not approved at this time.${safeReason ? `\n\nReview reason: ${safeReason}` : ""}\n\nYou can contact support at ${CONTACTS.support}.\n\nLogin: ${loginUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -583,49 +416,24 @@ export const sendWriterMembershipDecisionEmail = async (
       from: mailFrom(),
       to: email,
       subject,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge-approved { display: inline-block; background: #d1fae5; color: #065f46; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .badge-rejected { display: inline-block; background: #fee2e2; color: #991b1b; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .note { background: #fff; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 6px; margin: 12px 0; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">${safeMembershipLabel} Membership Review</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${name}</strong>,</p>
-              <div><span class="${isApproved ? "badge-approved" : "badge-rejected"}">${isApproved ? "Membership Approved" : "Membership Not Approved"}</span></div>
-              <p>Your ${safeMembershipLabel} membership request has been <strong>${isApproved ? "approved" : "reviewed"}</strong>.</p>
-              ${isApproved
-                ? "<p>Your writer profile now reflects your verified membership status.</p>"
-                : "<p>Your request was not approved at this time. You can upload updated proof and submit again.</p>"}
-              ${safeNote ? `<p><strong>Admin note:</strong></p><div class="note">${safeNote}</div>` : ""}
-              <div style="text-align:center">
-                <a href="${profileUrl}" class="button">Open My Profile</a>
-              </div>
-              <p style="color:#666;font-size:13px">If the button doesn't work, use this link:<br/><a href="${profileUrl}" style="color:#1e3a5f">${profileUrl}</a></p>
-              <p>Regards,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `${safeMembershipLabel} membership review`,
+        preheader: isApproved ? "Your membership request has been approved." : "Your membership request has been reviewed.",
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({
+            eyebrow: isApproved ? "Membership approved" : "Membership not approved",
+            title: `${safeMembershipLabel} membership review.`,
+            subtitle: isApproved
+              ? "Your writer profile now reflects your verified membership status."
+              : "Your request was not approved at this time. You can upload updated proof and submit again.",
+          }),
+          paragraphs(`Hi ${name},\n\nYour ${safeMembershipLabel} membership request has been ${isApproved ? "approved" : "reviewed"}.`),
+          safeNote ? panel({ eyebrow: "Admin note", text: safeNote }) : "",
+          button({ text: "Open my profile", url: profileUrl }),
+          linkFallback(profileUrl),
+        ],
+      }),
       text: `Hi ${name},\n\nYour ${safeMembershipLabel} membership request has been ${isApproved ? "approved" : "reviewed"}.${safeNote ? `\n\nAdmin note: ${safeNote}` : ""}\n\nOpen profile: ${profileUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -663,53 +471,19 @@ export const sendPurchaseRequestEmail = async (
       from: mailFrom(),
       to: writerEmail,
       subject: `📩 ${safeRequesterType} Access Request for "${scriptTitle}" — ckript`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .info-box { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">📩 New Purchase Request</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${writerName}</strong>,</p>
-              <div><span class="badge">💰 Purchase Request</span></div>
-              <p><strong>${safeRequesterName}</strong> (${safeRequesterType}) wants access to your script and has sent a purchase request to you.</p>
-              <div class="info-box">
-                <p style="margin:0"><strong>Script:</strong> ${scriptTitle}</p>
-                <p style="margin:4px 0 0"><strong>Offered Amount:</strong> ₹${amount}</p>
-                <p style="margin:4px 0 0"><strong>Requester:</strong> ${safeRequesterName} (${safeRequesterType})</p>
-                ${safeRequestNote ? `<p style="margin:4px 0 0"><strong>Message:</strong> ${safeRequestNote}</p>` : ""}
-              </div>
-              <p>Please log in to ckript and review this request in your purchase requests panel.</p>
-              <p>To share the full script, approve the request from the platform dashboard. If you decline, access will not be granted.</p>
-              <p>If you approve, the buyer will be asked to complete payment before access is granted.</p>
-              <div style="text-align:center">
-                <a href="${dashboardUrl}" class="button">Review Purchase Request</a>
-              </div>
-              <p style="color:#666;font-size:13px">If the button doesn't work, copy and paste this link:<br/><a href="${dashboardUrl}" style="color:#1e3a5f">${dashboardUrl}</a></p>
-              <p>Best regards,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "New purchase request",
+        preheader: `${safeRequesterName} wants access to "${scriptTitle}".`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "Purchase request", title: "Someone wants your script.", subtitle: `${safeRequesterName} (${safeRequesterType}) has sent a purchase request for “${scriptTitle}”.` }),
+          paragraphs(`Hi ${writerName},`),
+          facts([["Script", scriptTitle], ["Offered amount", `₹${amount}`], ["Requester", `${safeRequesterName} (${safeRequesterType})`], ["Message", safeRequestNote]]),
+          paragraphs("Log in to Ckript and review this request in your purchase requests panel.\n\nTo share the full script, approve the request from the dashboard. If you decline, access will not be granted. If you approve, the buyer will be asked to complete payment before access is granted."),
+          button({ text: "Review purchase request", url: dashboardUrl }),
+          linkFallback(dashboardUrl),
+        ],
+      }),
       text: `Hi ${writerName},\n\n${safeRequesterName} (${safeRequesterType}) wants access to your script "${scriptTitle}" and has sent a purchase request for ₹${amount}.${safeRequestNote ? `\n\nMessage: ${safeRequestNote}` : ""}\n\nPlease review the request on ckript and approve from the dashboard. After approval, the buyer will be asked to pay before access is granted.\n\nReview request: ${dashboardUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -741,13 +515,13 @@ export const sendPurchaseApprovedEmail = async (investorEmail, investorName, wri
     const subject = requiresPayment
       ? `✅ Request Approved — Complete Payment for "${scriptTitle}" — ckript`
       : `✅ Purchase Approved — "${scriptTitle}" — ckript`;
-    const headerTitle = requiresPayment ? "✅ Request Approved" : "🎉 Purchase Approved!";
-    const badgeText = requiresPayment ? "✅ Approved · Payment Required" : "✅ Approved";
-    const statusText = requiresPayment ? "Awaiting Buyer Payment" : "Access Granted ✅";
+    const headerTitle = requiresPayment ? "Request approved" : "Purchase approved";
+    const badgeText = requiresPayment ? "Approved · Payment required" : "Approved";
+    const statusText = requiresPayment ? "Awaiting buyer payment" : "Access granted";
     const ctaLabel = requiresPayment ? "Pay & Unlock Script" : "Open Approved Script";
     const bodyIntro = requiresPayment
-      ? `Great news! <strong>${writerName}</strong> approved your purchase request. Complete the payment to unlock full script access.`
-      : `Great news! <strong>${writerName}</strong> has approved your purchase request. You now have full access to the script.`;
+      ? `Great news! <strong>${escapeHtml(writerName)}</strong> approved your purchase request. Complete the payment to unlock full script access.`
+      : `Great news! <strong>${escapeHtml(writerName)}</strong> has approved your purchase request. You now have full access to the script.`;
     const bodyDetails = requiresPayment
       ? `<p>Please complete payment${amount > 0 ? ` of <strong>₹${amount.toLocaleString("en-IN")}</strong>` : ""} from the script page to unlock full synopsis and content.</p>${deadlineText ? `<p><strong>Payment deadline:</strong> ${deadlineText}</p>` : ""}`
       : `<p>You can now view the complete synopsis, full content, and all script details on ckript.</p>`;
@@ -759,49 +533,24 @@ export const sendPurchaseApprovedEmail = async (investorEmail, investorName, wri
       from: mailFrom(),
       to: investorEmail,
       subject,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #d1fae5; color: #065f46; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .info-box { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0; }
-            .button { display: inline-block; background: #065f46; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">${headerTitle}</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${investorName}</strong>,</p>
-              <div><span class="badge">${badgeText}</span></div>
-              <p>${bodyIntro}</p>
-              <div class="info-box">
-                <p style="margin:0"><strong>Script:</strong> ${scriptTitle}</p>
-                <p style="margin:4px 0 0"><strong>Writer:</strong> ${writerName}</p>
-                <p style="margin:4px 0 0"><strong>Status:</strong> ${statusText}</p>
-              </div>
-              ${bodyDetails}
-              <div style="text-align:center">
-                <a href="${scriptsUrl}" class="button">${ctaLabel}</a>
-              </div>
-              <p>${requiresPayment ? "Once payment is confirmed, access is granted instantly." : "Congratulations on your acquisition,"}<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: headerTitle,
+        preheader: requiresPayment
+          ? `${writerName} approved your request. Complete the payment to unlock the script.`
+          : `${writerName} approved your request. You now have full access.`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({
+            eyebrow: badgeText,
+            title: `${headerTitle}.`,
+            subtitle: requiresPayment ? `Complete the payment to unlock “${scriptTitle}”.` : `You now have full access to “${scriptTitle}”.`,
+          }),
+          fragment(`<p>Hi <strong>${escapeHtml(investorName)}</strong>,</p><p>${bodyIntro}</p>${bodyDetails}`),
+          facts([["Script", scriptTitle], ["Writer", writerName], ["Status", statusText]]),
+          button({ text: ctaLabel, url: scriptsUrl }),
+          paragraphs(requiresPayment ? "Once payment is confirmed, access is granted instantly." : "Congratulations on your acquisition."),
+        ],
+      }),
       text: textVersion,
     };
 
@@ -826,54 +575,22 @@ export const sendPurchaseRejectedEmail = async (investorEmail, investorName, wri
       from: mailFrom(),
       to: investorEmail,
       subject: `Purchase Request Declined — "${scriptTitle}" — ckript`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #1e3a5f 0%, #374151 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #fee2e2; color: #991b1b; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .info-box { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0; }
-            .note-box { background: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px; padding: 12px 16px; margin: 12px 0; font-style: italic; color: #92400e; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">Purchase Request Update</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${investorName}</strong>,</p>
-              <div><span class="badge">Request Declined</span></div>
-              <p>We're sorry to inform you that <strong>${writerName}</strong> has declined your purchase request for the following script.</p>
-              <div class="info-box">
-                <p style="margin:0"><strong>Script:</strong> ${scriptTitle}</p>
-                <p style="margin:4px 0 0"><strong>Writer:</strong> ${writerName}</p>
-                <p style="margin:4px 0 0"><strong>Status:</strong> Declined</p>
-              </div>
-              ${note ? `<p><strong>Writer's note:</strong></p><div class="note-box">${note}</div>` : ''}
-              ${refundAmount > 0
-                ? `<p>Any funds reserved for this request have been <strong>refunded</strong>${refundAmount ? ` (₹${refundAmount.toLocaleString("en-IN")})` : ""}.</p>`
-                : "<p>No payment was collected for this request.</p>"}
-              <p>Don't be discouraged — there are many other great scripts available on ckript!</p>
-              <div style="text-align:center">
-                <a href="${searchUrl}" class="button">Explore More Scripts</a>
-              </div>
-              <p>Best regards,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Purchase request update",
+        preheader: `${writerName} has declined your purchase request for "${scriptTitle}".`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "Request declined", title: "Purchase request update.", subtitle: `${writerName} has declined your purchase request for “${scriptTitle}”.` }),
+          paragraphs(`Hi ${investorName},\n\nWe're sorry to inform you that ${writerName} has declined your purchase request for the following script.`),
+          facts([["Script", scriptTitle], ["Writer", writerName], ["Status", "Declined"]]),
+          note ? panel({ eyebrow: "Writer's note", text: String(note) }) : "",
+          paragraphs(refundAmount > 0
+            ? `Any funds reserved for this request have been refunded (₹${refundAmount.toLocaleString("en-IN")}).`
+            : "No payment was collected for this request."),
+          paragraphs("Don't be discouraged — there are many other great scripts on Ckript."),
+          button({ text: "Explore more scripts", url: searchUrl }),
+        ],
+      }),
       text: `Hi ${investorName},\n\n${writerName} has declined your purchase request for "${scriptTitle}".\n${note ? `\nWriter's note: ${note}\n` : ''}\n${refundAmount > 0 ? `Any reserved funds were refunded${refundAmount ? ` (₹${refundAmount.toLocaleString("en-IN")})` : ""}.` : "No payment was collected for this request."}\n\nExplore more scripts: ${searchUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -922,31 +639,21 @@ export const sendAdminWorkflowAlertEmail = async ({ title, section, message, met
       return { success: true, skipped: true, reason: "spotlight-activation-alert-blocked-for-company-email" };
     }
 
-    const rows = Object.entries(metadata || {})
-      .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
-      .map(([key, value]) =>
-        `<tr><td style="padding:6px 10px;border:1px solid #e5e7eb;"><strong>${String(key)}</strong></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">${String(value)}</td></tr>`
-      )
-      .join("");
 
     const mailOptions = {
       from: mailFrom(),
       to: companyEmail,
       subject: `[Admin Alert] ${safeTitle}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <h2 style="margin:0 0 8px;">${safeTitle}</h2>
-          <p style="margin:0 0 12px;"><strong>Section:</strong> ${safeSection}</p>
-          <p style="margin:0 0 16px;">${safeMessage}</p>
-          ${rows ? `<table style="border-collapse:collapse;border:1px solid #e5e7eb;">${rows}</table>` : ""}
-          <p style="margin-top:16px;color:#6b7280;font-size:12px;">Generated at ${new Date().toISOString()}</p>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `[Admin Alert] ${safeTitle}`,
+        preheader: safeMessage,
+        blocks: [
+          heading({ eyebrow: `Admin alert · ${safeSection}`, title: safeTitle }),
+          paragraphs(safeMessage),
+          facts(Object.entries(metadata || {}).map(([key, value]) => [String(key), value === undefined || value === null ? "" : String(value)])),
+          fineprint(`Generated at ${new Date().toISOString()}`),
+        ],
+      }),
       text: `Title: ${safeTitle}\nSection: ${safeSection}\nMessage: ${safeMessage}\n${Object.entries(metadata || {}).map(([k, v]) => `${k}: ${v}`).join("\n")}${signatureText()}`,
     };
 
@@ -975,33 +682,22 @@ export const sendAdminPremiumGrantedEmail = async (
       from: mailFrom(),
       to: email,
       subject: "Welcome to ckript Premium!",
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background:#0f172a; color:#fff; padding:16px 20px;">
-              <h2 style="margin:0; font-size:20px;">Premium Model Activated</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 12px;">Hi ${name || "there"},</p>
-              <p style="margin:0 0 12px;">We have great news! ${safeAdminName} has granted you full access to the <strong>ckript Premium Model</strong> for film industry professionals.</p>
-              <p style="margin:0 0 16px;">With Premium, you can now:</p>
-              <ul style="margin:0 0 20px 20px; padding:0;">
-                <li style="margin-bottom:8px;">Explore a curated library of high-quality scripts.</li>
-                <li style="margin-bottom:8px;">View comprehensive writer details and portfolios.</li>
-                <li style="margin-bottom:8px;">Access exclusive AI evaluation scores and tools.</li>
-                <li>Connect directly with emerging and established writers.</li>
-              </ul>
-              <a href="${dashboardUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">Explore ckript Premium</a>
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">Thank you for being part of the ckript community.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Welcome to Ckript Premium",
+        preheader: `${safeAdminName} has granted you full access to the Ckript Premium Model.`,
+        blocks: [
+          heading({ eyebrow: "Premium model activated", title: "Welcome to Ckript Premium.", subtitle: `${safeAdminName} has granted you full access to the Premium Model for film industry professionals.` }),
+          paragraphs(`Hi ${name || "there"},\n\nWith Premium, you can now:`),
+          list([
+            "Explore a curated library of high-quality scripts.",
+            "View comprehensive writer details and portfolios.",
+            "Access exclusive AI evaluation scores and tools.",
+            "Connect directly with emerging and established writers.",
+          ]),
+          button({ text: "Explore Ckript Premium", url: dashboardUrl }),
+          fineprint("Thank you for being part of the Ckript community."),
+        ],
+      }),
       text: `Hi ${name || "there"},\n\nWe have great news! ${safeAdminName} has granted you full access to the ckript Premium Model.\n\nWith Premium, you can explore high-quality scripts, view writer details, and access exclusive AI tools.\n\nExplore ckript Premium: ${dashboardUrl}\n\nThank you for being part of the ckript community.\n\nRegards,\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1030,28 +726,16 @@ export const sendAdminPremiumRemovedEmail = async (
       from: mailFrom(),
       to: email,
       subject: "Update Regarding Your ckript Premium Access",
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background:#0f172a; color:#fff; padding:16px 20px;">
-              <h2 style="margin:0; font-size:20px;">Premium Model Access Removed</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 12px;">Hi ${name || "there"},</p>
-              <p style="margin:0 0 12px;">We are writing to inform you that ${safeAdminName} has removed your access to the <strong>ckript Premium Model</strong>.</p>
-              <p style="margin:0 0 16px;">As a result, your account has been reverted to the standard tier, and premium features (such as comprehensive writer details and exclusive AI evaluation tools) are no longer active on your account.</p>
-              <p style="margin:0 0 12px;">If you believe this was a mistake, or if you have any questions, please reach out to our support team.</p>
-              <a href="${contactUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">Contact Support</a>
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">Thank you for being part of the ckript community.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Update regarding your Ckript Premium access",
+        preheader: "Your Premium Model access has been removed.",
+        blocks: [
+          heading({ eyebrow: "Premium access", title: "Premium Model access removed.", subtitle: "Your account has been returned to the standard tier." }),
+          paragraphs(`Hi ${name || "there"},\n\nWe are writing to inform you that ${safeAdminName} has removed your access to the Ckript Premium Model.\n\nAs a result, your account has been reverted to the standard tier, and premium features (such as comprehensive writer details and exclusive AI evaluation tools) are no longer active on your account.\n\nIf you believe this was a mistake, or if you have any questions, please reach out to our support team.`),
+          button({ text: "Contact support", url: contactUrl }),
+          fineprint("Thank you for being part of the Ckript community."),
+        ],
+      }),
       text: `Hi ${name || "there"},\n\nWe are writing to inform you that ${safeAdminName} has removed your access to the ckript Premium Model.\n\nYour account has been reverted to the standard tier. If you have any questions, please reach out to our support team.\n\nContact Support: ${contactUrl}\n\nThank you for being part of the ckript community.\n\nRegards,\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1087,27 +771,17 @@ export const sendAdminMessageEmail = async (
       from: mailFrom(),
       to: email,
       subject: "New admin message on ckript",
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background:#0f172a; color:#fff; padding:16px 20px;">
-              <h2 style="margin:0; font-size:20px;">New Admin Message</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 12px;">Hi ${name || "there"},</p>
-              <p style="margin:0 0 12px;">${safeSenderName} sent you a new message on ckript.</p>
-              <p style="margin:0 0 16px;"><strong>Preview:</strong> ${summary}</p>
-              <a href="${messagesUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:600;">Open Messages</a>
-              <p style="margin:16px 0 0; color:#6b7280; font-size:12px;">This is an automated email from ckript.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "New admin message on Ckript",
+        preheader: summary,
+        blocks: [
+          heading({ eyebrow: "Message from the team", title: "New admin message.", subtitle: `${safeSenderName} sent you a message on Ckript.` }),
+          paragraphs(`Hi ${name || "there"},`),
+          panel({ eyebrow: "Preview", text: summary }),
+          button({ text: "Open messages", url: messagesUrl }),
+          fineprint("This is an automated email from Ckript."),
+        ],
+      }),
       text: `Hi ${name || "there"},\n\n${safeSenderName} sent you a new message on ckript.\nPreview: ${summary}\n\nOpen messages: ${messagesUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1118,6 +792,16 @@ export const sendAdminMessageEmail = async (
     return { success: false, error: error.message };
   }
 };
+
+/**
+ * The Email Builder's compiled footer carries these two slots, filled here per recipient — the
+ * unsubscribe token is theirs, so the link cannot exist until the recipient is known. Literal for
+ * literal the same as UNSUBSCRIBE_SLOT / PREFERENCES_SLOT in
+ * client/src/pages/admin/marketing/compiler/emailCompiler.js; emailBuilderPreview.test.jsx pins the
+ * two sides to each other across the package boundary.
+ */
+const UNSUBSCRIBE_SLOT = "{{UNSUBSCRIBE_URL}}";
+const PREFERENCES_SLOT = "{{PREFERENCES_URL}}";
 
 export const sendAdminBroadcastEmail = async (
   email,
@@ -1133,6 +817,10 @@ export const sendAdminBroadcastEmail = async (
     const safeAudienceLabel = String(audienceLabel || "community").trim() || "community";
     const safeAdminName = String(adminName || "ckript Admin").trim() || "ckript Admin";
     const dashboardUrl = buildClientUrl("/dashboard", clientBaseUrl);
+    // Where "Preferences" goes: the email-notification toggles on the profile's Settings tab. A
+    // CLIENT link, unlike the unsubscribe one — that endpoint lives on the API, this page lives in
+    // the SPA — so it goes through buildClientUrl like the dashboard link, not the API origin.
+    const preferencesUrl = buildClientUrl("/profile?tab=settings", clientBaseUrl);
     const finalUrl = actionUrl || dashboardUrl;
     const buttonText = actionUrl ? "Open Link" : "Open ckript";
     // No extra replacements needed if content is already HTML, but let's safely allow basic line breaks if it's plain text.
@@ -1145,57 +833,105 @@ export const sendAdminBroadcastEmail = async (
 
     const finalHtml = isBuilderV2 ? htmlContent : `
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="x-apple-disable-message-reformatting">
+          <meta name="color-scheme" content="light dark">
+          <meta name="supported-color-schemes" content="light dark">
+          <title>${safeTitle}</title>
+          <!--[if !mso]><!-->
+          <link href="https://fonts.googleapis.com/css2?family=Baskervville:ital@0;1&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" type="text/css">
+          <!--<![endif]-->
           <style>
-            body { margin: 0; padding: 0; background-color: #F9F9F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
-            .container { max-width: 640px; margin: 40px auto; background-color: #FFFFFF; border: 1px solid #EEEEEE; border-radius: 12px; overflow: hidden; }
-            .header { padding: 32px 40px 24px; text-align: center; }
-            .header img { height: 24px; width: auto; opacity: 0.9; }
-            .title { color: #111111; font-size: 24px; font-weight: 700; text-align: center; margin: 0 0 32px; letter-spacing: -0.5px; }
-            .body { padding: 0 40px 40px; color: #333333; font-size: 16px; line-height: 1.6; }
-            .action-btn { display: inline-block; background-color: #8B1E1E; color: #FFFFFF; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-size: 16px; font-weight: 600; margin-top: 32px; text-align: center; }
-            .footer { padding: 32px 40px; background-color: #F9F9F9; border-top: 1px solid #EEEEEE; text-align: center; color: #666666; font-size: 13px; line-height: 1.5; }
-            .footer a { color: #666666; text-decoration: underline; }
-            @media only screen and (max-width: 600px) {
-              .container { margin: 0; border-radius: 0; border: none; }
-              .body { padding: 0 24px 32px; }
-              .header { padding: 24px 24px 16px; }
-              .footer { padding: 24px; }
+            /* The same shell the Email Builder compiles (client/src/pages/admin/marketing/compiler/emailCompiler.js):
+               warm paper, ink, one coral accent, serif display type. Palette pinned across packages by
+               emailBuilderPreview.test.jsx — a colour that is not in EMAIL_PALETTE there fails the build. */
+            body { margin: 0; padding: 0; width: 100%; background-color: #fbfaf7; -webkit-text-size-adjust: 100%; }
+            table { border-collapse: collapse; border-spacing: 0; }
+            img { border: 0; display: block; }
+            .card { width: 100%; max-width: 640px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e7e5df; border-radius: 16px; }
+            .masthead { padding: 32px 48px 26px; border-bottom: 1px solid #f2efe9; text-align: center; }
+            .masthead img { width: 280px; max-width: 70%; height: auto; margin: 0 auto; }
+            .title { margin: 0 0 22px; font-family: 'Baskervville', 'Spectral', Georgia, 'Times New Roman', serif; font-size: 32px; font-weight: 400; line-height: 1.2; letter-spacing: -0.3px; color: #0b0a06; text-align: center; }
+            .body { padding: 40px 48px 8px; font-family: 'PT Serif', Georgia, 'Times New Roman', serif; font-size: 16px; line-height: 1.75; color: #57544f; }
+            .body p { margin: 0 0 18px; }
+            .body a { color: #0b0a06; }
+            .cta-cell { padding: 20px 48px 44px; text-align: center; }
+            .action-btn { display: inline-block; background-color: #161513; color: #ffffff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 600; letter-spacing: 0.2px; line-height: 50px; padding: 0 36px; border-radius: 10px; text-decoration: none; }
+            .footer { padding: 34px 48px 38px; background-color: #f4efe6; border-top: 1px solid #e7e5df; border-radius: 0 0 16px 16px; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.8; color: #9a978f; }
+            .footer p { margin: 0; }
+            .footer .tagline { font-family: 'Baskervville', 'Spectral', Georgia, 'Times New Roman', serif; font-style: italic; font-size: 15px; line-height: 1.5; color: #6f6c66; }
+            .footer .notice { margin-top: 20px; }
+            .footer .links { margin-top: 4px; letter-spacing: 0.4px; color: #57544f; }
+            .footer a { color: #57544f; text-decoration: none; }
+            .footer .unsub a { text-decoration: underline; }
+            .footer .legal { margin-top: 18px; font-size: 11px; letter-spacing: 0.3px; line-height: 1.6; }
+            @media (prefers-color-scheme: dark) {
+              body, .outer-table { background-color: #0f0f0f !important; }
+              .card { background-color: #1a1a1a !important; border-color: #242424 !important; }
+              .masthead { background-color: #f4efe6 !important; border-color: #242424 !important; }
+              .title, .body, .body a { color: #d7d7d7 !important; }
+              .footer { background-color: #141414 !important; border-color: #242424 !important; color: #9a9590 !important; }
+              .footer a, .footer .links, .footer .tagline { color: #d7d7d7 !important; }
+              .action-btn { background-color: #f4efe6 !important; color: #0b0a06 !important; }
+            }
+            @media only screen and (max-width: 640px) {
+              .outer { padding: 0 !important; }
+              .card { border-radius: 0 !important; border-left: 0 !important; border-right: 0 !important; }
+              .masthead, .body, .cta-cell, .footer { padding-left: 24px !important; padding-right: 24px !important; }
+              .footer { border-radius: 0 !important; }
+              .title { font-size: 27px !important; }
             }
           </style>
         </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <img src="https://ckript.com/logo-black.png" alt="Ckript" />
-            </div>
-            
-            <div class="body">
-              <h1 class="title">${safeTitle}</h1>
-              
-              <div>
-                ${htmlContent}
-              </div>
-
-              ${actionUrl ? `<div style="text-align: center;"><a href="${finalUrl}" class="action-btn">${buttonText}</a></div>` : ''}
-            </div>
-
-            <div class="footer">
-              <p style="margin: 0 0 16px;">
-                <strong>Ckript Private Limited</strong><br>
-                A minimal platform for storytellers.
-              </p>
-              <p style="margin: 0;">
-                <a href="https://ckript.com">Website</a> &nbsp;&middot;&nbsp;
-                <a href="https://ckript.com/privacy-policy">Privacy</a>
-              </p>
-              ${signatureHtml()}
-              <p style="margin: 16px 0 0;">&copy; ${new Date().getFullYear()} Ckript. All rights reserved.</p>
-            </div>
-          </div>
+        <body style="margin:0;padding:0;background-color:#fbfaf7;">
+          <table role="presentation" class="outer-table" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#fbfaf7;">
+            <tr>
+              <td class="outer" align="center" style="padding:44px 12px 52px;">
+                <!--[if mso]><table role="presentation" align="center" style="width:640px;"><tr><td><![endif]-->
+                <table role="presentation" class="card" width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background-color:#ffffff;border:1px solid #e7e5df;border-radius:16px;">
+                  <tr>
+                    <td class="masthead">
+                      <a href="https://ckript.com" style="text-decoration:none;display:inline-block;">
+                        <img src="https://ckript.com/ckript-logo-landscape-nobg.png" alt="Ckript" width="280" />
+                      </a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="body">
+                      <h1 class="title">${safeTitle}</h1>
+                      ${htmlContent}
+                    </td>
+                  </tr>
+                  ${actionUrl
+                    ? `<tr><td class="cta-cell"><a href="${finalUrl}" class="action-btn">${buttonText}</a></td></tr>`
+                    : `<tr><td style="padding:0 0 30px;font-size:1px;line-height:1px;">&nbsp;</td></tr>`}
+                  <tr>
+                    <td class="footer">
+                      <p class="tagline">A minimal platform for storytellers.</p>
+                      <p class="notice">You are receiving this because you subscribed to our updates.</p>
+                      <p class="links">
+                        <a href="https://ckript.com">Website</a> &nbsp;&middot;&nbsp;
+                        <a href="https://ckript.com/privacy-policy">Privacy</a> &nbsp;&middot;&nbsp;
+                        <a href="https://ckript.com/terms-of-service">Terms</a>${
+                          // A VISIBLE link, not only the List-Unsubscribe header. Gmail shows its header
+                          // control only for senders with reputation, and Outlook and Apple Mail never show it
+                          // at all — so for most recipients this line is the only way out that exists. A
+                          // recipient who cannot find one presses the spam button instead.
+                          unsubscribeUrl ? ` &nbsp;&middot;&nbsp;\n                <span class="unsub"><a href="${unsubscribeUrl}">Unsubscribe</a> &nbsp;&middot;&nbsp;\n                <a href="${preferencesUrl}">Preferences</a></span>` : ""
+                        }
+                      </p>
+                      ${signatureHtml()}
+                      <p class="legal">Ckript Private Limited &nbsp;&middot;&nbsp; &copy; ${new Date().getFullYear()} Ckript. All rights reserved.</p>
+                    </td>
+                  </tr>
+                </table>
+                <!--[if mso]></td></tr></table><![endif]-->
+              </td>
+            </tr>
+          </table>
         </body>
         </html>
     `;
@@ -1221,11 +957,41 @@ export const sendAdminBroadcastEmail = async (
       }
       : {};
 
+    /*
+     * The Email Builder path sends the admin's compiled document, and since the redesign that
+     * document carries its own footer — the same warm band as the wrapper above — with two slots for
+     * the personal links. They are filled HERE, per recipient, because the unsubscribe token is
+     * theirs and only exists at send time.
+     *
+     * A builder document WITHOUT slots (an older build still open in someone's browser, or HTML
+     * pasted from elsewhere) gets the strip below injected before </body>, the way notify.js appends
+     * the contact signature. Either way no bulk mail leaves without a visible way out.
+     */
+    const unsubscribeFooter = unsubscribeUrl
+      ? `\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">`
+        + `<tr><td align="center" style="padding:24px 16px;border-top:1px solid #e7e5df;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">`
+        + `<p style="margin:0;font-size:12px;line-height:1.8;color:#9a978f;">You are receiving this because you subscribed to our updates.</p>`
+        + `<p style="margin:8px 0 0;font-size:12px;line-height:1.8;color:#9a978f;">`
+        + `<a href="${unsubscribeUrl}" style="color:#57544f;text-decoration:underline;">Unsubscribe</a>`
+        + ` &nbsp;&middot;&nbsp; `
+        + `<a href="${preferencesUrl}" style="color:#57544f;text-decoration:underline;">Preferences</a>`
+        + `</p></td></tr></table>`
+      : "";
+    const hasFooterSlots = isBuilderV2 && finalHtml.includes(UNSUBSCRIBE_SLOT);
+    // No signed link for this send (nothing bulk passes one today, but the parameter is optional):
+    // the mailto that already backs the List-Unsubscribe header is the honest fallback.
+    const unsubscribeHref = unsubscribeUrl || `mailto:${CONTACTS.support}?subject=unsubscribe`;
+    const htmlForSend = hasFooterSlots
+      ? finalHtml.split(UNSUBSCRIBE_SLOT).join(unsubscribeHref).split(PREFERENCES_SLOT).join(preferencesUrl)
+      : isBuilderV2 && unsubscribeFooter
+        ? (finalHtml.includes("</body>") ? finalHtml.replace("</body>", `${unsubscribeFooter}\n</body>`) : finalHtml + unsubscribeFooter)
+        : finalHtml;
+
     const mailOptions = {
       from: mailFrom(),
       to: email,
       subject: safeTitle,
-      html: finalHtml,
+      html: htmlForSend,
       headers: listHeaders,
       // A plain-text alternative, like every other template here. Without one a broadcast is
       // HTML-only, which reads as spam to filters and renders as nothing in a text-only client — and
@@ -1238,7 +1004,7 @@ export const sendAdminBroadcastEmail = async (
       }\n\nTeam ${CONTACTS.name}${signatureText()}${
         // A visible link as well as the header. Plenty of clients render neither the header control
         // nor HTML, and a recipient who can find no way out is a spam complaint waiting to happen.
-        unsubscribeUrl ? `\n\nDon't want these emails? Unsubscribe: ${unsubscribeUrl}` : ""
+        unsubscribeUrl ? `\n\nDon't want these emails? Unsubscribe: ${unsubscribeUrl}\nManage preferences: ${preferencesUrl}` : ""
       }`,
       attachments: attachments.map(att => ({
         filename: att.filename,
@@ -1314,27 +1080,16 @@ export const sendNewMessageEmail = async (
       from: mailFrom(),
       to: email,
       subject: `New direct message from ${safeSenderName}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color:#fff; padding:20px 20px;">
-              <h2 style="margin:0; font-size:20px;">You have a new message! 🎬</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 12px; font-size: 16px;">Hi ${safeReceiverName},</p>
-              <p style="margin:0 0 16px; font-size: 16px;">Great news! Film industry professional <strong>${safeSenderName}</strong> has sent you a direct message regarding your work on ckript.</p>
-              <p style="margin:0 0 20px; font-size: 16px;">Don't keep them waiting—head over to your messages to reply and start the conversation!</p>
-              <a href="${messagesUrl}" style="display:inline-block;background:#2d5a8f;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600; font-size: 16px;">Go to Messages</a>
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">This is an automated email from ckript. If you need help, contact our support team.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `New direct message from ${safeSenderName}`,
+        preheader: `${safeSenderName} has sent you a direct message regarding your work.`,
+        blocks: [
+          heading({ eyebrow: "New message", title: "You have a new message.", subtitle: `Film industry professional ${safeSenderName} has written to you about your work on Ckript.` }),
+          paragraphs(`Hi ${safeReceiverName},\n\nDon't keep them waiting — head over to your messages to reply and start the conversation.`),
+          button({ text: "Go to messages", url: messagesUrl }),
+          fineprint("This is an automated email from Ckript. If you need help, contact our support team."),
+        ],
+      }),
       text: `Hi ${safeReceiverName},\n\nGreat news! Film industry professional ${safeSenderName} has sent you a direct message regarding your work on ckript.\n\nDon't keep them waiting—head over to your messages to reply and start the conversation!\n\nOpen Messages: ${messagesUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1368,36 +1123,18 @@ export const sendMeetingInvitationEmail = async (
       from: mailFrom(),
       to: email,
       subject: `Meeting Request from Producer on Ckript`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8f 100%); color:#fff; padding:20px 20px;">
-              <h2 style="margin:0; font-size:20px;">New Meeting Request 🗓️</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 16px; font-size: 16px;">Hello,</p>
-              <p style="margin:0 0 16px; font-size: 16px;"><strong>${producerName}</strong> has requested a meeting with you regarding your script <strong>"${scriptName}"</strong>.</p>
-              
-              <div style="background:#f3f4f6; padding:16px; border-radius:8px; margin-bottom:20px;">
-                <p style="margin:0 0 8px;"><strong>Date:</strong> ${date}</p>
-                <p style="margin:0 0 8px;"><strong>Time:</strong> ${time}</p>
-                <p style="margin:0;"><strong>Duration:</strong> ${duration} minutes</p>
-              </div>
-
-              <p style="margin:0 0 20px; font-size: 16px;">Please review and respond to this request from your dashboard.</p>
-              
-              <a href="${dashboardUrl}" style="display:inline-block;background:#2d5a8f;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600; font-size: 16px;">View Request in Dashboard</a>
-              
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">This is an automated email from ckript. If you need help, contact our support team.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "Meeting request from a producer",
+        preheader: `${producerName} has requested a meeting about "${scriptName}".`,
+        blocks: [
+          heading({ eyebrow: "Meeting request", title: "A producer wants to meet.", subtitle: `${producerName} has requested a meeting with you regarding your script “${scriptName}”.` }),
+          paragraphs("Hello,"),
+          facts([["Date", date], ["Time", time], ["Duration", duration ? `${duration} minutes` : ""]]),
+          paragraphs("Please review and respond to this request from your dashboard."),
+          button({ text: "View request in dashboard", url: dashboardUrl }),
+          fineprint("This is an automated email from Ckript. If you need help, contact our support team."),
+        ],
+      }),
       text: `Hello,\n\n${producerName} has requested a meeting with you regarding your script "${scriptName}".\n\nDate: ${date}\nTime: ${time}\nDuration: ${duration} minutes\n\nPlease review and respond to this request from your dashboard: ${dashboardUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1428,34 +1165,17 @@ export const sendMeetingAcceptedEmail = async (
       from: mailFrom(),
       to: email,
       subject: `Meeting Confirmed: ${writerName}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color:#fff; padding:20px 20px;">
-              <h2 style="margin:0; font-size:20px;">Meeting Confirmed ✅</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 16px; font-size: 16px;">Hello,</p>
-              <p style="margin:0 0 16px; font-size: 16px;"><strong>${writerName}</strong> has accepted your meeting request regarding the script <strong>"${scriptName}"</strong>.</p>
-              
-              <div style="background:#f3f4f6; padding:16px; border-radius:8px; margin-bottom:20px;">
-                <p style="margin:0 0 8px;"><strong>Date:</strong> ${date}</p>
-                <p style="margin:0 0 8px;"><strong>Time:</strong> ${time}</p>
-                <p style="margin:0; word-break: break-all;"><strong>Meeting Link:</strong> <a href="${meetingLink}" style="color:#2d5a8f;">${meetingLink}</a></p>
-              </div>
-
-              <a href="${meetingLink}" style="display:inline-block;background:#10b981;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600; font-size: 16px;">Join Meeting</a>
-              
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">This is an automated email from ckript. If you need help, contact our support team.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `Meeting confirmed: ${writerName}`,
+        preheader: `${writerName} accepted your meeting request about "${scriptName}".`,
+        blocks: [
+          heading({ eyebrow: "Meeting confirmed", title: "You're on the calendar.", subtitle: `${writerName} has accepted your meeting request regarding the script “${scriptName}”.` }),
+          paragraphs("Hello,"),
+          facts([["Date", date], ["Time", time], { label: "Meeting link", value: meetingLink, href: meetingLink }]),
+          button({ text: "Join meeting", url: meetingLink }),
+          fineprint("This is an automated email from Ckript. If you need help, contact our support team."),
+        ],
+      }),
       text: `Hello,\n\n${writerName} has accepted your meeting request regarding the script "${scriptName}".\n\nDate: ${date}\nTime: ${time}\nMeeting Link: ${meetingLink}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1486,35 +1206,18 @@ export const sendMeetingAcceptedWriterEmail = async (
       from: mailFrom(),
       to: email,
       subject: `Meeting Details: ${producerName} - ckript`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #2d5a8f 0%, #1e3a5f 100%); color:#fff; padding:20px 20px;">
-              <h2 style="margin:0; font-size:20px;">Meeting Details Confirmed</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 16px; font-size: 16px;">Hi <strong>${writerName}</strong>,</p>
-              <p style="margin:0 0 16px; font-size: 16px;">You have successfully accepted the meeting request from <strong>${producerName}</strong> regarding your script <strong>"${scriptName}"</strong>.</p>
-              
-              <div style="background:#f3f4f6; padding:16px; border-radius:8px; margin-bottom:20px;">
-                <p style="margin:0 0 8px;"><strong>Date:</strong> ${date}</p>
-                <p style="margin:0 0 8px;"><strong>Time:</strong> ${time}</p>
-                <p style="margin:0; word-break: break-all;"><strong>Meeting Link:</strong> <a href="${meetingLink}" style="color:#2d5a8f;">${meetingLink}</a></p>
-              </div>
-
-              <p style="margin:0 0 16px;">Please use the link above to join the meeting at the scheduled time.</p>
-              <a href="${meetingLink}" style="display:inline-block;background:#2d5a8f;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600; font-size: 16px;">Join Meeting</a>
-              
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">This is an automated email from ckript. We wish you a productive meeting!</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `Meeting details: ${producerName}`,
+        preheader: `Your meeting with ${producerName} about "${scriptName}" is confirmed.`,
+        blocks: [
+          heading({ eyebrow: "Meeting confirmed", title: "Meeting details confirmed.", subtitle: `You have accepted the meeting request from ${producerName} regarding your script “${scriptName}”.` }),
+          paragraphs(`Hi ${writerName},`),
+          facts([["Date", date], ["Time", time], { label: "Meeting link", value: meetingLink, href: meetingLink }]),
+          paragraphs("Use the link above to join the meeting at the scheduled time."),
+          button({ text: "Join meeting", url: meetingLink }),
+          fineprint("This is an automated email from Ckript. We wish you a productive meeting."),
+        ],
+      }),
       text: `Hi ${writerName},\n\nYou have accepted the meeting request from ${producerName} regarding your script "${scriptName}".\n\nDate: ${date}\nTime: ${time}\nMeeting Link: ${meetingLink}\n\nPlease use the link above to join the meeting at the scheduled time.\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1542,28 +1245,15 @@ export const sendMeetingRejectedEmail = async (
       from: mailFrom(),
       to: email,
       subject: `Meeting Declined: ${writerName}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-          <div style="max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color:#fff; padding:20px 20px;">
-              <h2 style="margin:0; font-size:20px;">Meeting Declined ❌</h2>
-            </div>
-            <div style="padding:20px; background:#ffffff;">
-              <p style="margin:0 0 16px; font-size: 16px;">Hello,</p>
-              <p style="margin:0 0 16px; font-size: 16px;">Unfortunately, <strong>${writerName}</strong> has declined your meeting request regarding the script <strong>"${scriptName}"</strong>.</p>
-              
-              <p style="margin:0 0 20px; font-size: 16px;">Your meeting quota slot for this request has been consumed and will not be refunded. You may reach out to them via direct messages instead.</p>
-              
-              <p style="margin:24px 0 0; color:#6b7280; font-size:12px;">This is an automated email from ckript. If you need help, contact our support team.</p>
-            </div>
-          </div>
-            <div style="max-width:620px;margin:16px auto 0;color:#6b7280;font-size:12px;line-height:1.7;text-align:center;">${signatureHtml()}
-            </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `Meeting declined: ${writerName}`,
+        preheader: `${writerName} has declined your meeting request about "${scriptName}".`,
+        blocks: [
+          heading({ eyebrow: "Meeting declined", title: "Meeting declined.", subtitle: `Unfortunately, ${writerName} has declined your meeting request regarding the script “${scriptName}”.` }),
+          paragraphs("Hello,\n\nYour meeting quota slot for this request has been consumed and will not be refunded. You may reach out to them via direct messages instead."),
+          fineprint("This is an automated email from Ckript. If you need help, contact our support team."),
+        ],
+      }),
       text: `Hello,\n\nUnfortunately, ${writerName} has declined your meeting request regarding the script "${scriptName}".\n\nYour meeting quota slot for this request has been consumed. You may reach out to them via direct messages instead.\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1594,44 +1284,18 @@ export const sendWriterPlanGrantedEmail = async (
       from: mailFrom(),
       to: email,
       subject: `🎉 You've been upgraded to ${formattedPlanName} — ckript`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #d4af37 0%, #aa801a 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">Account Upgraded</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${writerName}</strong>,</p>
-              <div><span class="badge">💎 ${formattedPlanName} Granted</span></div>
-              <p>Great news! An administrator on <strong>ckript</strong> has granted your account the <strong>${formattedPlanName}</strong> plan.</p>
-              <p>You can now enjoy the premium benefits of your new plan, including higher visibility and premium features to accelerate your screenwriting career.</p>
-              <div style="text-align:center">
-                <a href="${loginUrl}" class="button">Log In to ckript</a>
-              </div>
-              <p style="color:#666;font-size:13px">If the button doesn't work, copy and paste this link into your browser:<br/><a href="${loginUrl}" style="color:#1e3a5f">${loginUrl}</a></p>
-              <p>Welcome to the premium tier,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: `You've been upgraded to ${formattedPlanName}`,
+        preheader: `An administrator has granted your account the ${formattedPlanName} plan.`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: `${formattedPlanName} granted`, title: "Account upgraded.", subtitle: `An administrator on Ckript has granted your account the ${formattedPlanName} plan.` }),
+          paragraphs(`Hi ${writerName},\n\nYou can now enjoy the premium benefits of your new plan, including higher visibility and premium features to accelerate your screenwriting career.`),
+          button({ text: "Log in to Ckript", url: loginUrl }),
+          linkFallback(loginUrl),
+          paragraphs("Welcome to the premium tier."),
+        ],
+      }),
       text: `Hi ${writerName},\n\nGreat news! An administrator on ckript has granted your account the ${formattedPlanName} plan.\n\nYou can now enjoy all the premium benefits. Log in to explore: ${loginUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1660,44 +1324,18 @@ export const sendFipPlanGrantedEmail = async (
       from: mailFrom(),
       to: email,
       subject: `🎉 You've been upgraded to Diamond Film Industry Professional — ckript`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #0e7490 0%, #155e75 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge { display: inline-block; background: #e0f2fe; color: #0284c7; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .button { display: inline-block; background: #1e3a5f; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">Account Upgraded</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${userName}</strong>,</p>
-              <div><span class="badge">💎 1-Year Diamond Plan Granted</span></div>
-              <p>Great news! An administrator on <strong>ckript</strong> has granted your account a 1-year <strong>Diamond Film Industry Professional</strong> subscription.</p>
-              <p>You can now enjoy all premium access features, including contact revelations, meeting bookings, and comprehensive script analytics.</p>
-              <div style="text-align:center">
-                <a href="${loginUrl}" class="button">Log In to ckript</a>
-              </div>
-              <p style="color:#666;font-size:13px">If the button doesn't work, copy and paste this link into your browser:<br/><a href="${loginUrl}" style="color:#1e3a5f">${loginUrl}</a></p>
-              <p>Welcome to Diamond,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: "You've been upgraded to Diamond Film Industry Professional",
+        preheader: "An administrator has granted your account a 1-year Diamond subscription.",
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({ eyebrow: "1-year Diamond plan granted", title: "Account upgraded.", subtitle: "An administrator on Ckript has granted your account a 1-year Diamond Film Industry Professional subscription." }),
+          paragraphs(`Hi ${userName},\n\nYou can now enjoy all premium access features, including contact revelations, meeting bookings, and comprehensive script analytics.`),
+          button({ text: "Log in to Ckript", url: loginUrl }),
+          linkFallback(loginUrl),
+          paragraphs("Welcome to Diamond."),
+        ],
+      }),
       text: `Hi ${userName},\n\nGreat news! An administrator on ckript has granted your account a 1-year Diamond Film Industry Professional subscription.\n\nYou can now enjoy all the premium benefits. Log in to explore: ${loginUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
@@ -1750,54 +1388,27 @@ export const sendExternalRegistrationDecisionEmail = async (
       from: mailFrom(),
       to: email,
       subject,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #141110; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #faf8f7; padding: 30px; border-radius: 0 0 10px 10px; }
-            .badge-approved { display: inline-block; background: #d1fae5; color: #065f46; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .badge-rejected { display: inline-block; background: #fbf1ef; color: #8a2c1a; font-size: 14px; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
-            .note { background: #fff; border-left: 4px solid #D14D37; padding: 12px 14px; border-radius: 6px; margin: 12px 0; }
-            .facts { background: #fff; border: 1px solid #ded8d5; border-radius: 8px; padding: 14px; margin: 16px 0; font-size: 14px; }
-            .button { display: inline-block; background: #D14D37; color: white !important; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="margin:0">${competitionName}</h1>
-            </div>
-            <div class="content">
-              <p>Hi <strong>${name}</strong>,</p>
-              <div><span class="${isApproved ? "badge-approved" : "badge-rejected"}">${isApproved ? "Registration confirmed" : "We could not confirm this yet"}</span></div>
-              ${isApproved
-                ? `<p>We checked your registration on <strong>${providerLabel}</strong> and you're confirmed. No payment is needed on Ckript — your entry is active.</p>`
-                : `<p>We could not confirm your registration on <strong>${providerLabel}</strong> from the details you sent. <strong>You can submit again</strong> with corrected details — your place is not lost.</p>`}
-              <div class="facts">
-                <div><strong>Platform:</strong> ${providerLabel}</div>
-                ${externalRef ? `<div><strong>Your reference:</strong> ${externalRef}</div>` : ""}
-                ${isApproved && eventId ? `<div><strong>Your Ckript entry ID:</strong> ${eventId}</div>` : ""}
-              </div>
-              ${safeNote ? `<p><strong>Note from our team:</strong></p><div class="note">${safeNote}</div>` : ""}
-              <div style="text-align:center">
-                <a href="${actionUrl}" class="button">${isApproved ? "Open the challenge" : "Submit again"}</a>
-              </div>
-              <p style="color:#666;font-size:13px">If the button doesn't work, use this link:<br/><a href="${actionUrl}" style="color:#D14D37">${actionUrl}</a></p>
-              <p>Regards,<br/><strong>Team ${CONTACTS.name}</strong></p>
-            </div>
-            <div class="footer">${signatureHtml()}
-              <p>© 2026 ckript. All rights reserved.</p>
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
+      html: renderMailDocument({
+        title: subject,
+        preheader: isApproved
+          ? `Your registration on ${providerLabel} is confirmed.`
+          : `We could not confirm your registration on ${providerLabel} yet.`,
+        notice: AUTOMATED_NOTICE,
+        blocks: [
+          heading({
+            eyebrow: competitionName,
+            title: isApproved ? "You're in." : "We could not confirm this yet.",
+            subtitle: isApproved
+              ? `We checked your registration on ${providerLabel} and you're confirmed. No payment is needed on Ckript — your entry is active.`
+              : `We could not confirm your registration on ${providerLabel} from the details you sent. You can submit again with corrected details — your place is not lost.`,
+          }),
+          paragraphs(`Hi ${name},`),
+          facts([["Platform", providerLabel], ["Your reference", externalRef], ["Your Ckript entry ID", isApproved ? eventId : ""]]),
+          safeNote ? panel({ eyebrow: "Note from our team", text: safeNote }) : "",
+          button({ text: isApproved ? "Open the challenge" : "Submit again", url: actionUrl }),
+          linkFallback(actionUrl),
+        ],
+      }),
       text: `Hi ${name},\n\n${isApproved
         ? `Your registration on ${providerLabel} has been confirmed. No payment is needed on Ckript — your entry is active.${eventId ? `\n\nYour Ckript entry ID: ${eventId}` : ""}`
         : `We could not confirm your registration on ${providerLabel} from the details you sent. You can submit again with corrected details.`}${safeNote ? `\n\nNote from our team: ${safeNote}` : ""}\n\n${actionUrl}\n\nTeam ${CONTACTS.name}${signatureText()}`,

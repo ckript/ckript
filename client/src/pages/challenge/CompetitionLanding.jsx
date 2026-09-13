@@ -99,6 +99,9 @@ const WinnerCard = ({ label, person }) => {
       >
         {label}
       </p>
+      {person.badgeImage ? (
+        <img src={person.badgeImage} alt="" style={{ width: 56, height: 56, objectFit: "contain", marginTop: 14 }} />
+      ) : null}
       <p className="ckc-title" style={{ marginTop: 16, fontSize: "1.1875rem" }}>{person.name}</p>
       {person.scriptTitle ? (
         <p style={{ marginTop: 6, fontFamily: "var(--ckc-display)", fontStyle: "italic", fontSize: "1.0625rem", color: "var(--ckc-ink)" }}>
@@ -125,6 +128,49 @@ const WinnerCard = ({ label, person }) => {
 
 // Hoisted so React keeps one component identity across renders — a component declared inside the
 // page body would be a brand-new type every render and remount on every countdown tick.
+const longDate = (value) =>
+  value ? new Date(value).toLocaleDateString(undefined, { dateStyle: "long" }) : "";
+
+/**
+ * The Results section between the deadline and the announcement.
+ *
+ * A challenge that has closed with no word on results reads as abandoned — the countdown is gone,
+ * the Register button is dead, and the page says nothing about what happens next. This says what is
+ * coming, when, and where it will live, in the same slot the winners take once they are declared.
+ * Honest about the date: an announcement date that has passed is not repeated as a promise.
+ */
+const ResultsPending = ({ competition, serverNow }) => {
+  // The SERVER's clock decides whether the announcement date has passed — the payload always
+  // carries one, and reading the device clock during render is impure. Without a clock the date
+  // is shown as given rather than judged.
+  const serverTime = serverNow ? new Date(serverNow).getTime() : null;
+  const resultsAt = competition.dates?.resultsAt || null;
+  const overdue = Boolean(resultsAt) && serverTime != null && new Date(resultsAt).getTime() <= serverTime;
+  const submitted = Number.isFinite(competition.scriptsSubmitted) ? competition.scriptsSubmitted : null;
+  const when = resultsAt && !overdue ? ` on ${longDate(resultsAt)}` : resultsAt ? ", as soon as the panel has finished" : "";
+  return (
+    <Card>
+      <p
+        className="ckc-meta"
+        style={{ color: "var(--ckc-accent-text)", paddingBottom: 12, borderBottom: "1px solid var(--ckc-rule)" }}
+      >
+        Judging in progress
+      </p>
+      <p className="ckc-prose" style={{ marginTop: 16 }}>
+        The writing window closed{competition.dates?.endsAt ? ` on ${longDate(competition.dates.endsAt)}` : ""}
+        {submitted != null ? `, and ${submitted} ${submitted === 1 ? "script is" : "scripts are"} with the panel` : ""}.
+        {" "}The winner, the runner-up and the special awards will be announced here{when}.
+      </p>
+      <p className="ckc-prose" style={{ marginTop: 10 }}>
+        Every honouree takes a permanent place in the Ckript Hall of Fame.
+      </p>
+      <Link to="/hall-of-fame" className="ckc-link" style={{ marginTop: 16, display: "inline-block", fontSize: 14 }}>
+        Visit the Hall of Fame
+      </Link>
+    </Card>
+  );
+};
+
 const CtaButton = ({ cta, className = "" }) => (
   <button
     type="button"
@@ -343,12 +389,23 @@ const CompetitionLanding = () => {
           </Section>
         ) : null}
 
-        {/* Results */}
+        {/* Results — present from the moment the writing window closes, not only once winners
+            exist. Between the deadline and the declaration it says what is coming and when. */}
+        {phase === "judging" ? (
+          <Section id="results" title="Results">
+            <ResultsPending competition={competition} serverNow={serverNow} />
+          </Section>
+        ) : null}
+
+        {/* Declared results. Only a hidden or private competition reaches this branch — a public
+            one hands the whole page to the Hall of Fame record above — so the induction line is
+            replaced by the reason there is none. */}
         {phase === "results" && results ? (
           <Section id="results" title="Results">
             <div className="grid gap-4 sm:grid-cols-2">
               <WinnerCard label="Winner" person={results.winner} />
               <WinnerCard label="Runner-Up" person={results.runnerUp} />
+              <WinnerCard label="Second Runner-Up" person={results.secondRunnerUp} />
               {/* The award's own name is the heading. It used to sit under a hardcoded
                   "SPECIAL AWARD" eyebrow, so "Best Dialogue" read as a subtitle to a generic
                   label — and appeared twice on the one card that showed both. */}
@@ -356,6 +413,13 @@ const CompetitionLanding = () => {
                 <WinnerCard key={i} label={p.specialTitle || "Special Award"} person={p} />
               ))}
             </div>
+            <Card className="mt-4">
+              <p className="ckc-meta">Hall of Fame</p>
+              <p style={{ marginTop: 8, fontSize: 14, lineHeight: 1.6, color: "var(--ckc-muted)" }}>
+                This challenge ran by direct link only, so its results stay on this page rather than in the
+                public Hall of Fame.
+              </p>
+            </Card>
           </Section>
         ) : null}
 
@@ -413,6 +477,11 @@ const CompetitionLanding = () => {
           <div className="grid gap-4 md:grid-cols-3">
             <PrizeCard icon={Trophy} title="Winner" items={competition.prizes?.winner} accent="var(--ckc-ink)" />
             <PrizeCard icon={Award} title="Runner-Up" items={competition.prizes?.runnerUp} accent="var(--ckc-muted)" />
+            {/* A third placing only when the competition has one: the server sends no lines for a
+                tier that is switched off, and an empty card would promise a placing nobody awards. */}
+            {competition.prizes?.secondRunnerUp?.length ? (
+              <PrizeCard icon={Award} title="Second Runner-Up" items={competition.prizes.secondRunnerUp} accent="var(--ckc-muted)" />
+            ) : null}
             <PrizeCard
               icon={Sparkles}
               title="Special Awards"

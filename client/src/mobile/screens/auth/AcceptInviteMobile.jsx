@@ -3,17 +3,16 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import api from "../../../services/api";
 import { AuthContext } from "../../../context/AuthContext";
 import { acceptCollabInvite } from "../../../components/collab/collaborationRequests";
-import Button from "../../components/buttons/Button";
-import Icon from "../../components/Icon";
-import InlineMessage from "../../components/feedback/InlineMessage";
 import { SkeletonShape } from "../../components/feedback/Skeletons";
-import MobileShell from "../../shell/MobileShell";
 import { AUTH_SHELL_MODE, withReturnPath } from "./authChrome";
 import { readRefusal } from "./authModel";
+import AuthSurface, { AuthHead, AuthNav } from "./ios/AuthSurface";
+import AuthButton from "./ios/AuthButton";
+import { AuthCard, AuthFactRow, AuthNote, AuthNotice } from "./ios/AuthControls";
 import "./AcceptInviteMobile.css";
 
 /*
- * AcceptInviteMobile — /invite/:token (Phase 8, D59).
+ * AcceptInviteMobile — /invite/:token (Phase 8, D59; iOS redesign).
  *
  * The only route in this family that has work to do for both a signed-in and a
  * signed-out viewer, which is why it is a result surface rather than a form.
@@ -31,7 +30,16 @@ import "./AcceptInviteMobile.css";
  * is stated first for everyone: accepting a collaboration invitation adds a
  * person to someone else's screenplay, and doing that silently because a link
  * was opened is the wrong default for an irreversible-feeling action.
+ *
+ * WHAT THE PROTOTYPE'S CARD CANNOT SAY. Its mock names the inviter, the project
+ * and the expiry. This screen has a token and nothing else until the accept
+ * succeeds — there is no endpoint that previews an invitation — so the card
+ * carries what is actually known and the details appear once they exist. A
+ * plausible-looking name that is not the real inviter's would be worse than a
+ * plainer card.
  */
+
+const TITLE_ID = "ckm-invite-title";
 
 const STATUS = Object.freeze({
   LOADING: "loading",
@@ -102,30 +110,93 @@ export default function AcceptInviteMobile() {
     }
   }, [token]);
 
+  const head = () => {
+    if (status === STATUS.ACCEPTED) {
+      return { eyebrow: "Invitation", title: "You're in.", lede: "You now have access to the project." };
+    }
+    if (status === STATUS.NO_TOKEN) {
+      return {
+        eyebrow: "Invitation",
+        title: "That invitation link is incomplete",
+        lede: "The link is missing its invitation code.",
+        tone: "danger",
+      };
+    }
+    return {
+      eyebrow: "Invitation",
+      title: "You've been invited",
+      lede: "Someone wants you on their screenplay.",
+    };
+  };
+
   const body = () => {
-    if (status === STATUS.LOADING) return <SkeletonShape height={120} radius="var(--ckm-r-lg)" />;
+    if (status === STATUS.LOADING) {
+      return (
+        <div className="ckm-invite__pending">
+          <SkeletonShape height={120} radius="var(--ckm-r-lg)" />
+        </div>
+      );
+    }
 
     if (status === STATUS.NO_TOKEN) {
-      return (
-        <InlineMessage tone="warning" variant="panel" title="That invitation link is incomplete">
-          The link is missing its invitation code. Ask whoever invited you to send it again.
-        </InlineMessage>
-      );
+      return <AuthNote>Ask whoever invited you to send the link again.</AuthNote>;
     }
 
     if (status === STATUS.SIGNED_OUT) {
       return (
+        <AuthNote>
+          You&apos;ve been invited to collaborate on a screenplay. Sign in — or create your
+          account — and we&apos;ll bring you straight back here.
+        </AuthNote>
+      );
+    }
+
+    if (status === STATUS.ACCEPTED) {
+      return (
         <>
-          <p className="ckm-invite__lede">
-            You&apos;ve been invited to collaborate on a screenplay. Sign in — or create your account —
-            and we&apos;ll bring you straight back here.
-          </p>
-          <div className="ckm-invite__actions">
-            <Button fullWidth to={withReturnPath("/login", returnHere)}>Sign in to accept</Button>
-            <Button fullWidth variant="secondary" to={withReturnPath("/join", returnHere)}>
-              Create an account
-            </Button>
+          <AuthCard panel>
+            <AuthFactRow label="Status" value={result?.message || "You're on the project."} />
+            {result?.script?.title && <AuthFactRow label="Project" value={result.script.title} />}
+          </AuthCard>
+          <AuthNote>The writer has been told you accepted.</AuthNote>
+        </>
+      );
+    }
+
+    return (
+      <>
+        {status === STATUS.FAILED && refusal && (
+          <AuthNotice tone="error">
+            {refusal.message || "We couldn't accept that invitation."}
+          </AuthNotice>
+        )}
+        <AuthCard panel>
+          <div className="ckm-auth__row">
+            <span className="ckm-invite__mark material-symbols-outlined" aria-hidden="true">group_add</span>
+            <span className="ckm-auth__row-text">
+              <span className="ckm-auth__row-title ckm-auth__row-title--strong">Collaboration invitation</span>
+              <span className="ckm-auth__row-detail">Accepting adds you as a collaborator.</span>
+            </span>
           </div>
+          <AuthFactRow label="Signed in as" value={user?.name || user?.email || "You"} />
+        </AuthCard>
+        <AuthNote>
+          Accepting adds you to this screenplay as a collaborator, and the writer will be told.
+        </AuthNote>
+      </>
+    );
+  };
+
+  const footer = () => {
+    if (status === STATUS.LOADING || status === STATUS.NO_TOKEN) return null;
+
+    if (status === STATUS.SIGNED_OUT) {
+      return (
+        <>
+          <AuthButton to={withReturnPath("/login", returnHere)}>Sign in to accept</AuthButton>
+          <AuthButton variant="outline" to={withReturnPath("/join", returnHere)}>
+            Create an account
+          </AuthButton>
         </>
       );
     }
@@ -133,57 +204,49 @@ export default function AcceptInviteMobile() {
     if (status === STATUS.ACCEPTED) {
       return (
         <>
-          <p className="ckm-invite__lede">
-            {result?.message || "You're on the project."}
-            {result?.script?.title ? ` You now have access to ${result.script.title}.` : ""}
-          </p>
-          <div className="ckm-invite__actions">
-            <Button fullWidth to={result?.script?.id ? `/script/${result.script.id}` : "/collaborations"}>
-              {result?.script?.id ? "Open the project" : "See your collaborations"}
-            </Button>
-            <Button fullWidth variant="tertiary" to="/dashboard">Go to your dashboard</Button>
-          </div>
+          <AuthButton to={result?.script?.id ? `/script/${result.script.id}` : "/collaborations"}>
+            {result?.script?.id ? "Open the project" : "See your collaborations"}
+          </AuthButton>
+          <AuthButton variant="plain" to="/dashboard">Go to your dashboard</AuthButton>
         </>
       );
     }
 
     return (
       <>
-        <p className="ckm-invite__lede">
-          Accepting adds you to this screenplay as a collaborator, and the writer will be told.
-        </p>
-        {status === STATUS.FAILED && refusal && (
-          <InlineMessage tone="error" className="ckm-invite__error">
-            {refusal.message || "We couldn't accept that invitation."}
-          </InlineMessage>
-        )}
-        <div className="ckm-invite__actions">
-          <Button
-            fullWidth
-            onClick={accept}
-            pending={status === STATUS.ACCEPTING}
-            pendingLabel="Accepting…"
-          >
-            {status === STATUS.FAILED ? "Try again" : "Accept invitation"}
-          </Button>
-          <Button fullWidth variant="tertiary" onClick={() => navigate("/dashboard", { replace: true })}>
-            Not now
-          </Button>
-        </div>
+        <AuthButton
+          onClick={accept}
+          pending={status === STATUS.ACCEPTING}
+          pendingLabel="Accepting…"
+        >
+          {status === STATUS.FAILED ? "Try again" : "Accept invitation"}
+        </AuthButton>
+        <AuthButton variant="plain" onClick={() => navigate("/dashboard", { replace: true })}>
+          Not now
+        </AuthButton>
       </>
     );
   };
 
+  const copy = head();
+
   return (
-    <MobileShell mode={AUTH_SHELL_MODE} screenId="accept-invite">
-      <section className="ckm-invite" aria-labelledby="ckm-invite-title">
-        <Icon className="ckm-invite__mark" name="group_add" size={30} />
-        <p className="ckm-invite__eyebrow">Collaboration invitation</p>
-        <h1 className="ckm-invite__title" id="ckm-invite-title">
-          {status === STATUS.ACCEPTED ? "You're in." : "You've been invited"}
-        </h1>
-        {body()}
-      </section>
-    </MobileShell>
+    <AuthSurface
+      screenId="accept-invite"
+      mode={AUTH_SHELL_MODE}
+      labelledBy={TITLE_ID}
+      className="ckm-invite"
+      nav={<AuthNav glass title="Invitation" action={{ close: true, label: "Back to Ckript", to: "/" }} />}
+      footer={footer()}
+    >
+      <AuthHead
+        eyebrow={copy.eyebrow}
+        title={copy.title}
+        lede={copy.lede}
+        tone={copy.tone || "accent"}
+        titleId={TITLE_ID}
+      />
+      {body()}
+    </AuthSurface>
   );
 }

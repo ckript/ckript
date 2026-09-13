@@ -16,6 +16,7 @@ import { downloadChallengeCertificate } from "../../pages/challenge/challengeHub
 const AWARD_LABELS = {
   winner: "Winner",
   runner_up: "Runner-Up",
+  second_runner_up: "Second Runner-Up",
   special: "Special Award",
   participant: "Participated",
   none: "Did not submit",
@@ -31,7 +32,7 @@ const STATUS_LABELS = {
 
 // The awards that are an honour rather than a record of attendance. Only these get the accent, and
 // only as text — a placing is not a live thing, so it earns emphasis, not a coral fill.
-const HONOURS = ["winner", "runner_up", "special"];
+const HONOURS = ["winner", "runner_up", "second_runner_up", "special"];
 
 // The controls under the card are inline actions in a row, not a toolbar of buttons, so the
 // <button>s are reset to read as text and colour alone carries the emphasis.

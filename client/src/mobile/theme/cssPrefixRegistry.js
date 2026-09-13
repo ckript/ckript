@@ -94,6 +94,11 @@ export const MOBILE_CSS_PREFIXES = Object.freeze({
     owner: "components/navigation/NavBar.css",
     note: "Role-aware bottom tab bar; destinations come from the desktop audience presets and the active tab from the URL. Supersedes ckm-bottomnav, whose two items were hard-coded and whose active tab was a constant prop.",
   },
+  "ckm-more": {
+    kind: SHARED_COMPONENT,
+    owner: "components/navigation/NavMoreSheet.css",
+    note: "The bottom bar's overflow sheet. The bar holds four destinations and the mobile app has no drawer, so whatever does not fit was not demoted but unreachable — which is how the industry audience lost /dashboard and /writers entirely. Rows come from the same audience preset the bar does.",
+  },
 
   // --- Phase 1 form family ----------------------------------------------
   "ckm-field": {
@@ -303,7 +308,7 @@ export const MOBILE_CSS_PREFIXES = Object.freeze({
   // --- Public marketing (Phase 8, D57) ---------------------------------
   "ckm-landing": {
     kind: PAGE_FAMILY,
-    owner: "marketing/LandingMobile.css",
+    owner: "marketing/shelf/ShelfLanding.css",
     family: "marketing",
     note: "The native public homepage at `/`: one scroll surface containing every canonical landing beat plus its menu, trailer, and partner dialogs.",
   },
@@ -344,26 +349,17 @@ export const MOBILE_CSS_PREFIXES = Object.freeze({
     note: "The unauthenticated project share at /share/project/:id. It consumes only the server's public projection and never derives signed-in marketplace capabilities.",
   },
 
-  // --- Public profile (Phase 5, D34) -----------------------------------
-  "ckm-public-profile": {
+  // --- The profile desk (Phase 5, D34-D37) ------------------------------
+  // ckm-public-profile / ckm-visitor-profile / ckm-owner-profile were retired
+  // on 2026-09-03 and replaced by ONE prefix. The three screens had drifted into
+  // three stylesheets describing the same page — the same hero, the same fact
+  // list, the same chip row, three times — and the iOS prototype settles the
+  // argument: 2a, 2b, 2c and 2d are one screen with four fillings.
+  "ckm-desk": {
     kind: PAGE_FAMILY,
-    owner: "screens/profiles/public-profile/PublicProfileMobile.css",
+    owner: "screens/profiles/desk/ProfileDesk.css",
     family: "profiles",
-    note: "The signed-out public profile at /share/profile/:id: identity, public professional facts, safe links and published-project summaries over the sanitized public endpoint.",
-  },
-
-  "ckm-visitor-profile": {
-    kind: PAGE_FAMILY,
-    owner: "screens/profiles/visitor-profile/ProfileVisitorMobile.css",
-    family: "profiles",
-    note: "The authenticated visitor profile across id, share and canonical username routes, including relationship, messaging, pitch, block and metered contact actions.",
-  },
-
-  "ckm-owner-profile": {
-    kind: PAGE_FAMILY,
-    owner: "screens/profiles/owner-profile/ProfileOwnerMobile.css",
-    family: "profiles",
-    note: "The authenticated account's native identity and professional overview, including the shared profile editor.",
+    note: "Every profile surface: the signed-out share at /share/profile/:id, the authenticated visitor profile across id/share/canonical routes, and the account owner's own profile — one glass bar, identity block, stat strip, segmented control, docked ask, plus the full profile editor dialog.",
   },
 
   "ckm-profile-collection": {
@@ -450,24 +446,25 @@ export const MOBILE_CSS_PREFIXES = Object.freeze({
   // --- Account entry (Phase 8, D59) -------------------------------------
   "ckm-auth": {
     kind: PAGE_FAMILY,
-    owner: "screens/auth/Auth.css",
+    owner: "screens/auth/ios/AuthSurface.css, screens/auth/ios/AuthControls.css, screens/auth/ios/AuthSheet.css",
     family: "auth",
-    note: "The dark account-entry chrome shared by /login, /join and /forgot-password, plus the frame all five auth screens mount in. "
-      + "One prefix and one stylesheet for the three because they are the same surface asking for different fields; the reserved "
-      + "`ckm-forgot-password` is retired unused rather than owning a second copy of every rule (§7.2, 2026-08-26). "
-      + "Its `__otp*` elements belong to `components/OtpInput.jsx`, which is a member of this family and is also mounted by the "
-      + "stepper — so `SignUp.css` re-skins `.ckm-auth__otp-box` for its own ground rather than declaring a second six-box control. "
-      + "That is a family component being reused inside the family, not `ckm-signup` reaching into another prefix.",
+    note: "The account-entry surface and control kit: the sticky bar, the editorial lockup, the docked action, the grouped inset "
+      + "rows, the buttons, the six-box code field and the wheel picker sheet. Shared by /login, /join, /forgot-password AND by the "
+      + "stepper and the invite screen, which add only what is their own — so `ckm-signup` and `ckm-invite` mount this family's "
+      + "components rather than restating them. The reserved `ckm-forgot-password` stays retired for the same reason it was "
+      + "(§7.2, 2026-08-26): recovery is this surface asking for different fields. `.ckm-auth__scroll` is the shell tuning this "
+      + "family asks for through MobileShell's `scrollClassName`, which is why it is declared here and not in MobileShell.css.",
   },
   "ckm-signup": {
     kind: PAGE_FAMILY,
-    owner: "screens/auth/SignUp.css",
+    owner: "screens/auth/SignUpMobile.css",
     family: "auth",
     note: "The role-parameterised sign-up stepper at /signup?as=<role>. Reallocated from the three reserved but never-used prefixes "
       + "`ckm-writer-onboarding`, `ckm-producer-onboarding` and `ckm-industry-onboarding`: mobile implements all three flows as ONE "
       + "screen, so three prefixes would have been three names for one stylesheet. The role is a data attribute on the host, not a "
       + "prefix. Separate from `ckm-auth` for the reason `ckm-editor` is separate from `ckm-create-project` — a flow-shell surface "
-      + "with a step rail, per-step panels and a keyboard-aware docked footer shares nothing but tokens with a sign-in form.",
+      + "with a progress rail, per-step panels, a keyboard-aware docked footer and a finish screen adds those to the shared "
+      + "`ckm-auth` surface rather than being it.",
   },
   "ckm-invite": {
     kind: PAGE_FAMILY,

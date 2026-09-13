@@ -274,3 +274,117 @@ describe("it is actually wired into the sending path", () => {
     assert.equal(/req\.(query|body)\??\.category/.test(controllerSource), false);
   });
 });
+
+describe("the link is visible, and points at the right server", () => {
+  /*
+   * Two bugs found together, after an admin reported no unsubscribe in the mails they sent.
+   *
+   * The link was only ever in the List-Unsubscribe HEADER and the plain-text part. Gmail renders
+   * its header control only for senders with reputation; Outlook and Apple Mail never render it.
+   * The HTML body — what people actually read — had no link at all.
+   *
+   * And the URL was built from the CLIENT's origin. /api/unsubscribe is a route on the API server;
+   * in production the SPA lives on a different origin, so the link opened the front-end router and
+   * rendered a blank page. Same class as the Google Calendar redirect-URI bug.
+   */
+
+  const fakeReq = (host, protocol = "https") => ({ protocol, get: (h) => (h.toLowerCase() === "host" ? host : "") });
+
+  test("resolves the base from the request's own host, behind trust proxy", async () => {
+    const { resolveUnsubscribeBaseUrl } = await import("../utils/unsubscribeToken.js");
+    const saved = process.env.PUBLIC_API_URL;
+    delete process.env.PUBLIC_API_URL;
+    try {
+      assert.equal(resolveUnsubscribeBaseUrl(fakeReq("ckript-519795868401.asia-south1.run.app")), "https://ckript-519795868401.asia-south1.run.app");
+      assert.equal(resolveUnsubscribeBaseUrl(fakeReq("localhost:5000", "http")), "http://localhost:5000");
+    } finally {
+      if (saved !== undefined) process.env.PUBLIC_API_URL = saved;
+    }
+  });
+
+  test("PUBLIC_API_URL wins over the request host when set", async () => {
+    const { resolveUnsubscribeBaseUrl } = await import("../utils/unsubscribeToken.js");
+    const saved = process.env.PUBLIC_API_URL;
+    process.env.PUBLIC_API_URL = "https://api.ckript.com/";
+    try {
+      assert.equal(resolveUnsubscribeBaseUrl(fakeReq("some-proxy-host")), "https://api.ckript.com");
+    } finally {
+      if (saved === undefined) delete process.env.PUBLIC_API_URL; else process.env.PUBLIC_API_URL = saved;
+    }
+  });
+
+  test("never builds a relative link — an empty base yields no link, not a dead one", () => {
+    // "/api/unsubscribe?token=…" is a working path on a web page and a dead link in an inbox, and
+    // because it was non-empty the List-Unsubscribe headers still went out pointing at it.
+    assert.equal(buildUnsubscribeUrl("", USER, "marketing"), "");
+    assert.equal(buildUnsubscribeUrl("ckript.com", USER, "marketing"), "");
+    assert.equal(buildUnsubscribeUrl(undefined, USER, "marketing"), "");
+    assert.match(buildUnsubscribeUrl("https://api.ckript.com", USER, "marketing"), /^https:\/\/api\.ckript\.com\/api\/unsubscribe\?token=/);
+  });
+
+  test("the broadcast builds the link from the API origin, not the client origin", () => {
+    const at = adminSource.indexOf("buildUnsubscribeUrl(", adminSource.indexOf("sendAdminBroadcastEmail("));
+    const call = adminSource.slice(at, at + 120);
+    assert.match(call, /resolveUnsubscribeBaseUrl\(req\)/);
+    assert.equal(/resolveClientOriginFromRequest\(req\)/.test(call), false, "the client origin is the SPA, not the API");
+  });
+
+  test("the HTML wrapper footer carries a visible Unsubscribe link", () => {
+    const start = emailSource.indexOf("export const sendAdminBroadcastEmail");
+    const body = emailSource.slice(start, emailSource.indexOf("export const send", start + 10));
+    assert.match(body, /href="\$\{unsubscribeUrl\}">Unsubscribe<\/a>/, "the wrapper footer has no visible unsubscribe link");
+    // Gated: transactional-style sends with no unsubscribeUrl must not render a dangling link.
+    assert.match(body, /unsubscribeUrl \? ` &nbsp;&middot;&nbsp;/);
+  });
+
+  test("a Builder V2 document gets the link injected before </body>", () => {
+    const start = emailSource.indexOf("export const sendAdminBroadcastEmail");
+    const body = emailSource.slice(start, emailSource.indexOf("export const send", start + 10));
+    assert.match(body, /isBuilderV2 && unsubscribeFooter/);
+    assert.match(body, /replace\("<\/body>"/);
+    assert.match(body, /html: htmlForSend/, "mailOptions must send the injected html, not the raw finalHtml");
+  });
+});
+
+describe("the delivered footer matches the admin preview — Unsubscribe AND Preferences", () => {
+  /*
+   * An admin reported Unsubscribe and Preferences visible in the Email Builder preview but absent
+   * from the actual mail. The preview drew them as decorative spans outside the compiled document;
+   * nothing in the sent path ever rendered "Preferences", and Unsubscribe reached only the header
+   * and text part. The server now injects the same footer the preview shows, with real links.
+   */
+  const start = emailSource.indexOf("export const sendAdminBroadcastEmail");
+  const body = emailSource.slice(start, emailSource.indexOf("export const send", start + 10));
+
+  test("Preferences points at the profile Settings tab, built as a CLIENT link", () => {
+    // Not the API origin: the notification toggles live in the SPA, the unsubscribe endpoint on the API.
+    assert.match(body, /const preferencesUrl = buildClientUrl\("\/profile\?tab=settings", clientBaseUrl\)/);
+  });
+
+  test("the wrapper footer carries both links, gated on unsubscribeUrl", () => {
+    assert.match(body, /href="\$\{unsubscribeUrl\}">Unsubscribe<\/a>/);
+    assert.match(body, /href="\$\{preferencesUrl\}">Preferences<\/a>/);
+    // Both live inside the same `unsubscribeUrl ? … : ""` so a transactional send renders neither.
+    const gate = body.indexOf('unsubscribeUrl ? ` &nbsp;&middot;&nbsp;');
+    assert.ok(gate > -1);
+    assert.ok(body.indexOf('href="${preferencesUrl}">Preferences</a>') > gate);
+  });
+
+  test("the Builder V2 injection is the preview's footer, word for word", () => {
+    assert.match(body, /You are receiving this because you subscribed to our updates\./);
+    const footerStart = body.indexOf("const unsubscribeFooter = unsubscribeUrl");
+    const footer = body.slice(footerStart, footerStart + 1400);
+    assert.match(footer, /href="\$\{unsubscribeUrl\}"[^>]*>Unsubscribe<\/a>/);
+    assert.match(footer, /href="\$\{preferencesUrl\}"[^>]*>Preferences<\/a>/);
+  });
+
+  test("the plain-text part offers preferences too", () => {
+    assert.match(body, /Manage preferences: \$\{preferencesUrl\}/);
+  });
+
+  test("preferencesUrl is defined before the wrapper template that uses it", () => {
+    // It is referenced inside the finalHtml template literal; declared after it, that is a
+    // ReferenceError at send time — the class of bug the no-undef guard exists for.
+    assert.ok(body.indexOf("const preferencesUrl") < body.indexOf("const finalHtml"));
+  });
+});

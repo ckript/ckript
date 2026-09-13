@@ -41,7 +41,8 @@ function Person({ person, award }) {
   return (
     <Card className={award === "winner" ? "ckm-hall__person--winner" : ""}>
       <CardBody>
-        <Badge tone={award === "winner" ? "accent" : award === "runner_up" ? "info" : "neutral"}>{person.specialTitle || (award === "winner" ? "Winner" : award === "runner_up" ? "Runner-Up" : "Special award")}</Badge>
+        <Badge tone={award === "winner" ? "accent" : award === "runner_up" ? "info" : "neutral"}>{person.specialTitle || (award === "winner" ? "Winner" : award === "runner_up" ? "Runner-Up" : award === "second_runner_up" ? "Second Runner-Up" : "Special award")}</Badge>
+        {person.badgeImage ? <img src={person.badgeImage} alt="" style={{ width: 56, height: 56, objectFit: "contain", marginTop: 10 }} /> : null}
         <div className="ckm-hall__person">
           <span>{person.profileImage ? <img src={resolveMediaUrl(person.profileImage)} alt="" /> : <span aria-hidden="true">{String(person.name || "W").charAt(0)}</span>}</span>
           <div><CardTitle as="h3" to={profile || null}>{person.name || "Writer"}</CardTitle>{person.scriptTitle ? <p>{person.scriptTitle}</p> : null}</div>
@@ -55,7 +56,7 @@ function Person({ person, award }) {
 }
 
 function ArchiveCard({ competition }) {
-  const people = [competition.winner, competition.runnerUp, ...list(competition.special)].filter(Boolean);
+  const people = [competition.winner, competition.runnerUp, competition.secondRunnerUp, ...list(competition.special)].filter(Boolean);
   return (
     <Card>
       <CardMedia src={resolveMediaUrl(competition.bannerUrl)} ratio="16 / 8" placeholderIcon="emoji_events" overlay={<Badge>{competition.year || "Archive"}</Badge>} />
@@ -144,7 +145,7 @@ function CompetitionRecord({ slug, previewDetail = null }) {
   if (record.status === HALL_OF_FAME_STATUS.FAILED) return shell(<InlineMessage variant="panel" title="This record could not be loaded" onRetry={record.retry}>{record.failure?.message}</InlineMessage>);
   if (record.status === HALL_OF_FAME_STATUS.NOT_FOUND || !data) return shell(<EmptyState titleAs="h2" icon="workspace_premium" title="Competition record not found" body="The link may be incorrect, or results have not been declared." actions={<Button to="/hall-of-fame">Browse the Hall of Fame</Button>} />);
 
-  const people = [data.results?.winner ? { person: data.results.winner, award: "winner" } : null, data.results?.runnerUp ? { person: data.results.runnerUp, award: "runner_up" } : null, ...list(data.results?.special).map((person) => ({ person, award: "special" }))].filter(Boolean);
+  const people = [data.results?.winner ? { person: data.results.winner, award: "winner" } : null, data.results?.runnerUp ? { person: data.results.runnerUp, award: "runner_up" } : null, data.results?.secondRunnerUp ? { person: data.results.secondRunnerUp, award: "second_runner_up" } : null, ...list(data.results?.special).map((person) => ({ person, award: "special" }))].filter(Boolean);
   const dateRange = [competition.dates?.startsAt, competition.dates?.endsAt].filter(Boolean).map(formatChallengeDate).join(" – ");
   return shell(<>
     <header className="ckm-hall__record-hero">{competition.bannerUrl ? <img src={resolveMediaUrl(competition.bannerUrl)} alt="" /> : null}<div><Badge tone="accent">Results declared</Badge><h2>{competition.name}{yearSuffix(competition.name, competition.year) ? ` ${competition.year}` : ""}</h2>{competition.theme?.title ? <p>{competition.theme.title}</p> : null}<span>{dateRange}</span>{competition.prizePool ? <strong>{competition.prizePool} prize pool</strong> : null}{shareMessage ? <small role="status">{shareMessage}</small> : null}</div></header>

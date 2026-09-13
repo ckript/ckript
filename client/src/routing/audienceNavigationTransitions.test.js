@@ -6,6 +6,9 @@ import { getDefaultAuthenticatedPath } from "./audienceTransitions";
 const profilePath = "/profile/member-1";
 const paths = (items = []) => items.filter((item) => item?.path).map((item) => item.path);
 
+/* The bar plus its More sheet is the whole of navigation on a phone. */
+const reachableOnPhone = (mobile) => paths([...mobile.tabs, ...mobile.overflow]);
+
 function navigationFor(role) {
   const user = { _id: `${role}-1`, role };
   return {
@@ -21,6 +24,8 @@ describe("audience navigation transitions", () => {
     expect(paths(desktop.drawer)).toContain("/create-project");
     expect(paths(desktop.drawer)).not.toContain("/home");
     expect(paths(desktop.drawer).some((path) => path.startsWith("/reader"))).toBe(false);
+    // Unchanged: Profile is named by the preset now rather than appended by
+    // buildNav, and this preset still names it fourth.
     expect(paths(mobile.tabs)).toEqual(["/dashboard", "/dashboard?tab=projects", "/messages", profilePath]);
   });
 
@@ -32,7 +37,17 @@ describe("audience navigation transitions", () => {
       expect(paths(desktop.drawer)).toContain("/mandates");
       expect(paths(desktop.drawer)).not.toContain("/create-project");
       expect(paths(desktop.drawer).some((path) => path.startsWith("/reader"))).toBe(false);
-      expect(paths(mobile.tabs)).toEqual(["/home", "/featured", "/messages", profilePath]);
+
+      /*
+       * 2026-09-03: the bar carries /dashboard and /writers, which no industry
+       * mobile screen linked to and which the old four slots had no room for —
+       * so they could not be opened on a phone at all. Featured and Profile
+       * moved to More, which is a demotion rather than the removal this was.
+       */
+      expect(paths(mobile.tabs)).toEqual(["/home", "/dashboard", "/writers", "/messages"]);
+      expect(reachableOnPhone(mobile)).toEqual(
+        expect.arrayContaining(["/featured", "/mandates", profilePath]),
+      );
     },
   );
 
@@ -42,7 +57,12 @@ describe("audience navigation transitions", () => {
     expect(paths(desktop.drawer)).not.toContain("/mandates");
     expect(paths(desktop.drawer)).not.toContain("/offer-holds");
     expect(paths(desktop.drawer)).not.toContain("/create-project");
-    expect(paths(mobile.tabs)).toEqual(["/home", "/featured", "/messages", profilePath]);
+    expect(paths(mobile.tabs)).toEqual(["/home", "/dashboard", "/writers", "/messages"]);
+
+    // An actor shares the discovery chrome but receives no professional
+    // destinations — not in the bar, and not smuggled in through More either.
+    expect(reachableOnPhone(mobile)).not.toContain("/mandates");
+    expect(reachableOnPhone(mobile)).toContain(profilePath);
   });
 
   it("keeps reader chrome reader-owned", () => {

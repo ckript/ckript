@@ -1,0 +1,952 @@
+/*
+ * Ckript Mobile — account entry controls (prefix: ckm-auth)
+ * ------------------------------------------------------------------
+ * The grouped inset list the prototype builds every screen out of: one white
+ * card, hairline-separated rows, and a caption or an error beneath it.
+ *
+ * The rows are deliberately NOT the shared `ckm-field` / `ckm-control`
+ * primitives. Those draw a labelled box per control, which is the right shape
+ * for the product's forms and the wrong one here: this family's rows put the
+ * label and the value on one 44px line inside a shared card, and reskinning the
+ * primitive to do that would have changed every other form in the app.
+ *
+ * Scoped under `.ckm`; `ckm-auth` prefix (plan §7.1–7.2).
+ */
+
+/* --- Card -------------------------------------------------------------- */
+
+/*
+ * THE CARD PUBLISHES ITS SHAPE; ITS SURFACES ASK FOR IT.
+ *
+ * A card is a rounded box with a 1px border, and the rows inside it paint their
+ * own background, press tint and focus ring. Something has to reconcile a square
+ * child with a round parent, and the obvious answer — `overflow: hidden` — is
+ * the wrong one: clipping reshapes a FILL correctly but DESTROYS a STROKE. It
+ * takes the corner off a focus ring rather than bending it, which is the defect
+ * this replaced, and it would have done the same to any shadow, ring or tint a
+ * later row wanted to draw near an edge.
+ *
+ * So the radius is published as a custom property instead. Custom properties
+ * inherit, so any surface at any depth can derive its own corner from the card
+ * it happens to be in without knowing which card that is — which is what the
+ * role list, two levels down inside a <ul>, needs. One source of truth, and no
+ * clip to silently eat what a child draws.
+ *
+ * `- 1px` is the border: a child nests inside it, so its corner is the outer
+ * radius less the stroke it sits within. Without that the two curves are
+ * concentric-but-wrong and leave a hairline of card showing at each corner.
+ */
+.ckm .ckm-auth__card {
+  --ckma-card-radius: var(--ckma-radius-card);
+  --ckma-card-inner-radius: calc(var(--ckma-card-radius) - 1px);
+  background: var(--ckma-surface);
+  border: 1px solid var(--ckma-line);
+  border-radius: var(--ckma-card-radius);
+}
+
+.ckm .ckm-auth__card--panel {
+  --ckma-card-radius: var(--ckma-radius-panel);
+}
+
+/* A card whose rows carry an invalid value. Stated on the group because the
+   rows share one border — see the field error beneath it for what is wrong. */
+.ckm .ckm-auth__card.is-invalid {
+  border-color: var(--ckma-danger);
+}
+
+/* Cards on a flush body run to the frame's inset; prose keeps the type gutter,
+   so a caption still lines up with the heading above it rather than with the
+   card it follows. */
+.ckm .ckm-auth__body--flush .ckm-auth__card,
+.ckm .ckm-auth__body--flush .ckm-auth__notice,
+.ckm .ckm-auth__body--flush .ckm-auth__still {
+  margin-left: var(--ckma-inset);
+  margin-right: var(--ckma-inset);
+}
+
+.ckm .ckm-auth__body--flush .ckm-auth__note {
+  margin-left: var(--ckma-gutter);
+  margin-right: var(--ckma-gutter);
+}
+
+/* --- Block: a labelled group with its caption --------------------------- */
+
+.ckm .ckm-auth__block + .ckm-auth__block {
+  margin-top: 26px;
+}
+
+.ckm .ckm-auth__block-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 9px;
+  font: var(--ckm-weight-bold) 10px/12px var(--ckm-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__block-label::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ckma-ink-4);
+}
+
+.ckm .ckm-auth__body--flush .ckm-auth__block-label {
+  margin-left: var(--ckma-inset);
+  margin-right: var(--ckma-inset);
+}
+
+/* --- Rows -------------------------------------------------------------- */
+
+.ckm .ckm-auth__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--ckm-touch-min);
+  padding: 13px var(--ckma-inset);
+  background: var(--ckma-surface);
+  border: 0;
+  border-top: 1px solid var(--ckma-sep);
+  text-align: left;
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__row:first-child {
+  border-top-color: transparent;
+}
+
+/* A row that acts. The pressed tint is the iOS list convention and the only
+   feedback a full-width row can give without moving. */
+.ckm .ckm-auth__row--action {
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__row--action:active {
+  background: var(--ckma-press);
+}
+
+.ckm .ckm-auth__row--lead {
+  padding-right: 14px;
+}
+
+.ckm .ckm-auth__row--split {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A read-only summary line: what it is, and what it says. */
+.ckm .ckm-auth__fact-label {
+  font: 400 15px/22px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__fact-value {
+  font: var(--ckm-weight-medium) 15px/22px var(--ckm-body);
+  color: var(--ckma-ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ckm .ckm-auth__row-label {
+  flex: none;
+  width: 88px;
+  font: 400 15px/24px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__row-prefix {
+  flex: none;
+  font: 400 17px/24px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ckm .ckm-auth__row-title {
+  font: 400 17px/22px var(--ckm-body);
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__row-title--strong {
+  font-weight: var(--ckm-weight-medium);
+}
+
+.ckm .ckm-auth__row-detail {
+  font: 400 13px/17px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__row-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ckm .ckm-auth__row-value-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 17px/22px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__row-value-text.is-empty {
+  color: var(--ckma-ink-3);
+}
+
+.ckm .ckm-auth__chevron {
+  flex: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ckma-ink-4);
+}
+
+/* --- Text entry --------------------------------------------------------- */
+
+.ckm .ckm-auth__input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: 400 17px/24px var(--ckm-body);
+  color: var(--ckma-ink);
+  /* 17px keeps mobile Safari from zooming the viewport on focus; the token
+     file's floor is 16px and this sits above it. */
+}
+
+.ckm .ckm-auth__input::placeholder {
+  color: var(--ckma-placeholder);
+}
+
+/* --- Focus ------------------------------------------------------------
+ * The desktop stylesheet ships an UNSCOPED `*:focus-visible` (and a second
+ * rule for inputs) that reaches inside `.ckm` and paints a coral halo with a
+ * radius of its own. This family draws the app's ring instead — one rule,
+ * scoped to the family, with enough specificity to win without !important.
+ */
+.ckm .ckm-auth :focus-visible,
+.ckm .ckm-auth__sheet :focus-visible {
+  outline: var(--ckm-focus-ring-width) solid var(--ckm-focus-ring);
+  outline-offset: var(--ckm-focus-ring-offset);
+  box-shadow: none;
+}
+
+/* Focus is drawn on the ROW, not the bare input: the input has no box of its
+   own, so a ring on it would trace the text rather than the target. `:has` and
+   `:focus-visible` together mean a tap raises the keyboard without painting a
+   ring nobody asked for, while Tab still shows where it landed. */
+.ckm .ckm-auth__row .ckm-auth__input:focus-visible,
+.ckm .ckm-auth__field .ckm-auth__textarea:focus-visible {
+  outline: none;
+}
+
+.ckm .ckm-auth__row:has(:focus-visible),
+.ckm .ckm-auth__row--action:focus-visible {
+  outline: var(--ckm-focus-ring-width) solid var(--ckm-focus-ring);
+  outline-offset: calc(var(--ckm-focus-ring-offset) * -1);
+}
+
+/*
+ * AND NOT WHEN A FINGER PUT IT THERE.
+ *
+ * `:focus-visible` matches on ANY focus for a text input — every engine does
+ * this deliberately, because it cannot know whether a keyboard is coming. On a
+ * phone that is the wrong default: tapping a field is simply how you type, and
+ * the screen has already answered "which field am I in?" twice over — the caret
+ * is blinking in it and the keyboard has slid up under it. The ring was a third
+ * answer nobody asked for, and at 2px of ink it was the heaviest mark on the
+ * page.
+ *
+ * So it is spent where it is the only answer: on the person who arrived by Tab,
+ * who placed no caret and raised no keyboard. `useInputModality` publishes
+ * which of the two is driving; `[data-input="pointer"]` is a tap or a click.
+ *
+ * This does not weaken SC 2.4.7 — for a pointer user the caret is the visible
+ * focus indicator, which is the same reasoning every native text field on iOS
+ * and Android relies on. Keyboard users keep the full 2px ring.
+ */
+.ckm .ckm-auth[data-input="pointer"] .ckm-auth__row:has(:focus-visible),
+.ckm .ckm-auth[data-input="pointer"] .ckm-auth__field:has(:focus-visible),
+.ckm .ckm-auth[data-input="pointer"] :focus-visible {
+  outline: none;
+}
+
+/* The surfaces that touch a card's corners take the card's corners. Everything
+   a row paints — background, press tint, focus ring — then follows the same
+   curve, so none of them needs to be clipped back into shape. */
+.ckm .ckm-auth__card > .ckm-auth__row:first-child,
+.ckm .ckm-auth__roles li:first-child .ckm-auth__role {
+  border-start-start-radius: var(--ckma-card-inner-radius);
+  border-start-end-radius: var(--ckma-card-inner-radius);
+}
+
+.ckm .ckm-auth__card > .ckm-auth__row:last-child,
+.ckm .ckm-auth__roles li:last-child .ckm-auth__role {
+  border-end-start-radius: var(--ckma-card-inner-radius);
+  border-end-end-radius: var(--ckma-card-inner-radius);
+}
+
+.ckm .ckm-auth__field {
+  padding: 14px var(--ckma-inset);
+  background: var(--ckma-surface);
+  border: 1px solid var(--ckma-line);
+  border-radius: var(--ckma-radius-card);
+}
+
+.ckm .ckm-auth__field.is-invalid {
+  border-color: var(--ckma-danger);
+}
+
+.ckm .ckm-auth__field:has(:focus-visible) {
+  outline: var(--ckm-focus-ring-width) solid var(--ckm-focus-ring);
+  outline-offset: var(--ckm-focus-ring-offset);
+}
+
+.ckm .ckm-auth__textarea {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  resize: none;
+  font: 400 17px/24px var(--ckm-body);
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__textarea::placeholder {
+  color: var(--ckma-placeholder);
+}
+
+.ckm .ckm-auth__count {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 4px 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reveal / hide, as a word rather than an eye: on a soft keyboard a strong
+   password means several layout switches typed blind, and the control that
+   fixes that should say what it does. */
+.ckm .ckm-auth__reveal {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 400 15px/1 var(--ckm-body);
+  color: var(--ckma-accent-ink);
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__reveal:active {
+  opacity: 0.5;
+}
+
+/* --- Marks -------------------------------------------------------------- */
+
+/* The username's "that one is free" tick. */
+.ckm .ckm-auth__ok {
+  flex: none;
+  font-size: 21px;
+  line-height: 24px;
+  color: var(--ckma-ok);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.ckm .ckm-auth__ok.is-on {
+  opacity: 1;
+}
+
+/* A consent box: filled when accepted. */
+.ckm .ckm-auth__mark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--ckma-ink-4);
+  border-radius: 12px;
+  background: var(--ckma-surface);
+  font-size: 16px;
+  line-height: 1;
+  color: transparent;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.ckm .ckm-auth__mark.is-on {
+  background: var(--ckma-ink);
+  border-color: var(--ckma-ink);
+  color: #fff;
+}
+
+/* A list selection: a tick in the margin, no box. */
+.ckm .ckm-auth__tick {
+  flex: none;
+  font-size: 21px;
+  line-height: 22px;
+  color: var(--ckma-accent-ink);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.ckm .ckm-auth__tick.is-on {
+  opacity: 1;
+}
+
+/* --- Switch ------------------------------------------------------------- */
+
+.ckm .ckm-auth__switch {
+  flex: none;
+  display: flex;
+  width: 51px;
+  height: 31px;
+  padding: 2px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(11, 10, 6, 0.16);
+  transition: background 220ms ease;
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__switch[aria-checked="true"] {
+  background: var(--ckma-accent);
+}
+
+.ckm .ckm-auth__switch-knob {
+  width: 27px;
+  height: 27px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(11, 10, 6, 0.25);
+  transform: translateX(0);
+  transition: transform 220ms var(--ckm-ease);
+}
+
+.ckm .ckm-auth__switch[aria-checked="true"] .ckm-auth__switch-knob {
+  transform: translateX(20px);
+}
+
+/* --- Password strength -------------------------------------------------- */
+
+.ckm .ckm-auth__meter {
+  display: flex;
+  gap: 5px;
+  margin: 14px 4px 0;
+}
+
+.ckm .ckm-auth__meter-seg {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(11, 10, 6, 0.11);
+  transition: background 250ms ease;
+}
+
+.ckm .ckm-auth__meter-seg.is-on {
+  background: var(--ckma-accent);
+}
+
+.ckm .ckm-auth__meter--weak .ckm-auth__meter-seg.is-on {
+  background: var(--ckma-danger);
+}
+
+.ckm .ckm-auth__meter--strong .ckm-auth__meter-seg.is-on {
+  background: var(--ckma-ok);
+}
+
+/* The five rules, as a checklist rather than one sentence: the server refuses
+   naming one rule at a time, so someone who breaks two learns about them a
+   round trip apart. */
+.ckm .ckm-auth__rules {
+  display: grid;
+  gap: 4px;
+  margin: 12px 4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ckm .ckm-auth__rules li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__rules li .material-symbols-outlined {
+  font-size: 17px;
+  line-height: 18px;
+  color: var(--ckma-ink-4);
+}
+
+.ckm .ckm-auth__rules li.is-met {
+  color: var(--ckma-ok);
+}
+
+.ckm .ckm-auth__rules li.is-met .material-symbols-outlined {
+  color: var(--ckma-ok);
+}
+
+/* --- Captions, errors, banners ------------------------------------------ */
+
+.ckm .ckm-auth__note {
+  margin: 11px 4px 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__note a {
+  color: var(--ckma-accent-ink);
+  text-decoration: none;
+}
+
+.ckm .ckm-auth__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 11px 4px 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-danger);
+  animation: ckm-auth-nudge 300ms ease both;
+}
+
+.ckm .ckm-auth__error .material-symbols-outlined {
+  flex: none;
+  font-size: 17px;
+  line-height: 18px;
+  color: var(--ckma-danger);
+}
+
+.ckm .ckm-auth__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 11px 4px 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__status .material-symbols-outlined {
+  font-size: 17px;
+  line-height: 18px;
+}
+
+.ckm .ckm-auth__status--ok {
+  color: var(--ckma-ok);
+}
+
+.ckm .ckm-auth__status--bad {
+  color: var(--ckma-danger);
+}
+
+/* A refusal that belongs to no single control. The left rule is the whole
+   difference between the two tones — everything else is one card. */
+.ckm .ckm-auth__notice {
+  margin: 0 0 20px;
+  padding: 13px 15px;
+  background: var(--ckma-surface);
+  border: 1px solid var(--ckma-line);
+  border-left: 3px solid var(--ckma-accent);
+  border-radius: var(--ckma-radius-card);
+  animation: ckm-auth-pop 340ms var(--ckm-ease) both;
+}
+
+.ckm .ckm-auth__notice--error {
+  border-color: var(--ckma-danger-line);
+  border-left-color: var(--ckma-danger);
+}
+
+.ckm .ckm-auth__notice-title {
+  margin: 0 0 4px;
+  font: var(--ckm-weight-semibold) 13px/18px var(--ckm-body);
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__notice-body {
+  margin: 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__notice--error .ckm-auth__notice-body {
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__notice-retry {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  margin-top: 9px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ckma-ink);
+  color: #fff;
+  font: var(--ckm-weight-semibold) 13px/1 var(--ckm-body);
+  cursor: pointer;
+}
+
+.ckm .ckm-auth__notice-retry:active {
+  opacity: 0.7;
+}
+
+/* --- Buttons ------------------------------------------------------------ */
+
+.ckm .ckm-auth__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  height: var(--ckma-control-h);
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--ckma-radius-control);
+  background: var(--ckma-ink);
+  color: #fff;
+  font: var(--ckm-weight-semibold) 17px/1 var(--ckm-body);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.ckm .ckm-auth__btn:active {
+  opacity: 0.7;
+  transform: scale(0.975);
+}
+
+.ckm .ckm-auth__btn[disabled],
+.ckm .ckm-auth__btn[aria-disabled="true"] {
+  opacity: var(--ckm-disabled-opacity);
+  pointer-events: none;
+}
+
+/* On the dark screens the hierarchy inverts: the page is ink, so the primary
+   action is the paper. */
+.ckm .ckm-auth__btn--light {
+  background: #fff;
+  color: var(--ckma-ink);
+}
+
+.ckm .ckm-auth__btn--light:active {
+  opacity: 0.6;
+}
+
+.ckm .ckm-auth__btn--outline {
+  background: var(--ckma-surface);
+  border: 1px solid var(--ckma-line);
+  color: var(--ckma-ink);
+  font-weight: var(--ckm-weight-medium);
+}
+
+.ckm .ckm-auth__btn--outline:active {
+  opacity: 0.6;
+}
+
+.ckm .ckm-auth__btn--plain {
+  height: var(--ckm-touch-min);
+  background: none;
+  color: var(--ckma-ink-2);
+  font: 400 15px/1 var(--ckm-body);
+}
+
+.ckm .ckm-auth__btn--plain:active {
+  opacity: 0.5;
+  transform: none;
+}
+
+.ckm .ckm-auth--dark .ckm-auth__btn--plain {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* --- Third-party sign-in ------------------------------------------------
+ * Google renders its own button and none of its chrome can be reached from
+ * here. This element used to draw a 50px, 13px-corner frame around it, which
+ * made a white rounded box inside a white rounded box with two borders, two
+ * radii and fifteen pixels of dead air either side.
+ *
+ * A slot cannot make a third-party button belong; it can only stop competing
+ * with it. So there is no frame — this is a measurement, and the width it
+ * measures is handed to Google as the one lever that makes its button line up
+ * with the actions above it. See AuthGoogleSlot.jsx.
+ */
+.ckm .ckm-auth__google {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  /* Google's own button is 40px; hold the row's height so the stack does not
+     jump when it finishes rendering. */
+  min-height: 40px;
+}
+
+.ckm .ckm-auth__google > div {
+  width: 100%;
+}
+
+.ckm .ckm-auth__divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 6px 0;
+  font: 400 12px/1 var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__divider::before,
+.ckm .ckm-auth__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--ckma-line);
+}
+
+/* --- Sign-in composition ------------------------------------------------ */
+
+.ckm .ckm-auth__form {
+  display: block;
+}
+
+.ckm .ckm-auth__forgot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 36px;
+  margin: 0;
+  padding: 10px var(--ckma-gutter) 0;
+}
+
+/* A quieter weight than the family's link: this one sits alone under the card
+   and would otherwise compete with the action directly beneath it. */
+.ckm .ckm-auth__forgot .ckm-auth__link {
+  font-weight: var(--ckm-weight-regular);
+}
+
+.ckm .ckm-auth__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px var(--ckma-gutter) 0;
+}
+
+/* --- Halted account ----------------------------------------------------- */
+
+.ckm .ckm-auth__row--reason {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px var(--ckma-inset);
+}
+
+.ckm .ckm-auth__row--reason .ckm-auth__block-label {
+  margin: 0;
+}
+
+/* Inside a card the rule would repeat the card's own left edge. */
+.ckm .ckm-auth__row--reason .ckm-auth__block-label::before {
+  display: none;
+}
+
+.ckm .ckm-auth__reason-text {
+  font: 400 15px/21px var(--ckm-body);
+  color: var(--ckma-ink);
+}
+
+/* --- Verification code -------------------------------------------------- */
+
+.ckm .ckm-auth__otp-boxes {
+  display: flex;
+  gap: var(--ckm-space-2);
+}
+
+.ckm .ckm-auth__otp-box {
+  width: 100%;
+  min-width: 0;
+  height: 58px;
+  padding: 0;
+  background: var(--ckma-surface);
+  border: 1px solid var(--ckma-line);
+  border-radius: 11px;
+  text-align: center;
+  font: var(--ckm-weight-medium) 27px/1 var(--ckm-display);
+  color: var(--ckma-ink);
+}
+
+/* The one place the desktop sheet's `border-color: ... !important` can still be
+   seen, because this control is the only one in the family with a border of its
+   own. Answered in kind, and in ink rather than red: an invalid code already
+   turns these boxes #ba4034, and the box you are typing into must not look like
+   the answer you got wrong. */
+.ckm .ckm-auth__otp-box:focus-visible {
+  border-color: var(--ckma-ink) !important;
+}
+
+.ckm .ckm-auth__otp.is-invalid .ckm-auth__otp-box {
+  border-color: var(--ckma-danger);
+}
+
+.ckm .ckm-auth__otp-hint {
+  margin: 13px 4px 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-ink-2);
+}
+
+.ckm .ckm-auth__otp-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 13px 4px 0;
+  font: 400 13px/18px var(--ckm-body);
+  color: var(--ckma-danger);
+  animation: ckm-auth-nudge 300ms ease both;
+}
+
+.ckm .ckm-auth__otp-error .material-symbols-outlined {
+  flex: none;
+  font-size: 17px;
+  line-height: 18px;
+}
+
+.ckm .ckm-auth__resend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 22px 0 0;
+  font: 400 14px/19px var(--ckm-body);
+  color: var(--ckma-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckm .ckm-auth__resend .ckm-auth__link {
+  font-size: 14px;
+  line-height: 19px;
+}
+
+/* Recovery puts the new password under the code. The resend line is a caption,
+   not a separator, so the group below it needs the block's own rhythm. */
+.ckm .ckm-auth__resend + .ckm-auth__block {
+  display: block;
+  margin-top: 26px;
+}
+
+/* --- Role chooser ------------------------------------------------------- */
+
+.ckm .ckm-auth__roles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ckm .ckm-auth__role {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 14px 14px 14px var(--ckma-inset);
+  background: var(--ckma-surface);
+  border-top: 1px solid var(--ckma-sep);
+  color: var(--ckma-ink);
+  text-decoration: none;
+}
+
+.ckm .ckm-auth__roles li:first-child .ckm-auth__role {
+  border-top-color: transparent;
+}
+
+/* Drawn inside the link, like the rows: a ring outside it would sit on the
+   card's border rather than around the target. */
+.ckm .ckm-auth__role:focus-visible {
+  outline-offset: calc(var(--ckm-focus-ring-offset) * -1);
+}
+
+.ckm .ckm-auth__role:active {
+  background: var(--ckma-press);
+}
+
+.ckm .ckm-auth__role-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--ckma-accent-soft);
+  color: var(--ckma-accent-ink);
+  font-size: 22px;
+  line-height: 1;
+}
+
+/* --- Editorial still ----------------------------------------------------
+ * The one photograph in the family, on the one screen that is a choice rather
+ * than a form and has no keyboard competing for the space.
+ */
+.ckm .ckm-auth__still {
+  position: relative;
+  height: 172px;
+  margin: 26px 0 0;
+  border-radius: var(--ckma-radius-panel);
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, #ececee 0 9px, #e1e1e3 9px 18px);
+}
+
+.ckm .ckm-auth__still img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.72) contrast(1.08);
+}
+
+.ckm .ckm-auth__still::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 10, 6, 0) 22%, rgba(11, 10, 6, 0.84) 100%);
+}
+
+.ckm .ckm-auth__still-caption {
+  position: absolute;
+  left: var(--ckma-inset);
+  right: var(--ckma-inset);
+  bottom: 15px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ckm .ckm-auth__still-kicker {
+  font: var(--ckm-weight-bold) 10px/12px var(--ckm-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.ckm .ckm-auth__still-line {
+  font: var(--ckm-weight-medium) 22px/27px var(--ckm-display);
+  color: #fff;
+}

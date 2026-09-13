@@ -104,7 +104,7 @@ const competitionEntrySchema = new mongoose.Schema({
   result: {
     award: {
       type: String,
-      enum: ["none", "winner", "runner_up", "special", "participant"],
+      enum: ["none", "winner", "runner_up", "second_runner_up", "special", "participant"],
       default: "none",
     },
     specialTitle: { type: String, default: "" },

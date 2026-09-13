@@ -42,6 +42,10 @@ const WinnerBlock = ({ person, label, icon, prominent = false }) => {
         {icon}
         {person.specialTitle || label}
       </p>
+      {/* The competition's own artwork for this badge, when the admin uploaded one. */}
+      {person.badgeImage ? (
+        <img src={person.badgeImage} alt="" style={{ width: 64, height: 64, objectFit: "contain", marginTop: 14 }} />
+      ) : null}
 
       <div className={`mt-4 flex items-start gap-4 ${prominent ? "sm:gap-5" : ""}`}>
         <Avatar src={person.profileImage} name={person.name} size={prominent ? 72 : 52} />
@@ -152,6 +156,13 @@ const HallOfFameDetail = () => {
   }
 
   const { competition, results, stats, featuredScripts } = data;
+  // Everyone the record honours, in placing order, for the induction line below the roll.
+  const honourees = [results.winner, results.runnerUp, results.secondRunnerUp, ...(results.special || [])].filter(Boolean);
+  // "Mira Sen, Dev Kapoor and Ana Ruiz" — one sentence, not a list.
+  const listNames = (people) => {
+    const names = people.map((p) => p.name).filter(Boolean);
+    return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  };
   const dateRange = [competition.dates?.startsAt, competition.dates?.endsAt]
     .filter(Boolean)
     .map((d) => new Date(d).toLocaleDateString(undefined, { dateStyle: "medium" }))
@@ -189,13 +200,16 @@ const HallOfFameDetail = () => {
           ) : null}
         </header>
 
-        {results.winner || results.runnerUp ? (
+        {results.winner || results.runnerUp || results.secondRunnerUp ? (
           <>
             <hr className="ckc-rule" style={{ marginTop: 40 }} />
-            <Section title="Winners">
+            {/* This is the Results section of a finished challenge — the landing page hands a
+                concluded competition here — so it says so, in the slug-line voice above the roll. */}
+            <Section eyebrow="Results" title="Winners">
               <div className="ckc-stack">
                 <WinnerBlock person={results.winner} label="Winner" icon={<Trophy className="h-4 w-4" style={{ color: "var(--ckc-accent)" }} aria-hidden="true" />} prominent />
                 <WinnerBlock person={results.runnerUp} label="Runner-Up" icon={<Award className="h-4 w-4" style={{ color: "var(--ckc-faint)" }} aria-hidden="true" />} />
+                <WinnerBlock person={results.secondRunnerUp} label="Second Runner-Up" icon={<Award className="h-4 w-4" style={{ color: "var(--ckc-faint)" }} aria-hidden="true" />} />
               </div>
             </Section>
           </>
@@ -204,12 +218,32 @@ const HallOfFameDetail = () => {
         {results.special?.length ? (
           <>
             <hr className="ckc-rule" />
-            <Section title="Special awards">
+            <Section eyebrow={results.winner || results.runnerUp || results.secondRunnerUp ? undefined : "Results"} title="Special awards">
               <div className="grid gap-5 sm:grid-cols-2">
                 {results.special.map((person, i) => (
                   <WinnerBlock key={i} person={person} label="Special award" icon={<Sparkles className="h-4 w-4" style={{ color: "var(--ckc-faint)" }} aria-hidden="true" />} />
                 ))}
               </div>
+            </Section>
+          </>
+        ) : null}
+
+        {honourees.length ? (
+          <>
+            <hr className="ckc-rule" />
+            {/* The record is also an induction. Winning a challenge puts a writer in the Hall of Fame
+                for good, and the page that announces the result is where that should be said. */}
+            <Section eyebrow="Hall of Fame" title="A permanent place">
+              <Card>
+                <p className="ckc-prose">
+                  {listNames(honourees)} now {honourees.length === 1 ? "holds" : "hold"} a permanent place in the
+                  Ckript Hall of Fame — the roll of every writer who has won a challenge here. This page is
+                  their record; the Hall lists them beside every winner before and after.
+                </p>
+                <Link to="/hall-of-fame" className="ckc-link mt-4 inline-block" style={{ fontSize: 14 }}>
+                  Browse the Hall of Fame
+                </Link>
+              </Card>
             </Section>
           </>
         ) : null}

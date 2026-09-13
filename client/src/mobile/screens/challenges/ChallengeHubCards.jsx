@@ -16,6 +16,7 @@ import Card, {
 import InlineMessage from "../../components/feedback/InlineMessage";
 import {
   HONOUR_AWARDS,
+  badgeImageForEntry,
   challengeAwardLabel,
   challengeDateRange,
   challengePhaseLabel,
@@ -92,11 +93,12 @@ const awardTone = (award) => (award === "winner" ? "accent" : award === "runner_
 export function LaureateCardMobile({ person, award }) {
   if (!person) return null;
   const profileKey = person.username || person.userId;
-  const awardName = person.specialTitle || (award === "winner" ? "Winner" : award === "runner_up" ? "Runner-Up" : "Special Award");
+  const awardName = person.specialTitle || (award === "winner" ? "Winner" : award === "runner_up" ? "Runner-Up" : award === "second_runner_up" ? "Second Runner-Up" : "Special Award");
   return (
     <Card className="ckm-challenge-hub__laureate">
       <CardBody>
         <Badge tone={awardTone(award)}>{awardName}</Badge>
+        {person.badgeImage ? <img src={person.badgeImage} alt="" style={{ width: 56, height: 56, objectFit: "contain", marginTop: 10 }} /> : null}
         <div className="ckm-challenge-hub__person">
           <span className="ckm-challenge-hub__avatar">
             {person.profileImage ? <img src={resolveMediaUrl(person.profileImage)} alt="" /> : <span aria-hidden="true">{String(person.name || "W").charAt(0)}</span>}
@@ -159,6 +161,7 @@ export function EntryCardMobile({ item }) {
           <div className="ckm-challenge-hub__badges">
             <Badge tone="info">{challengeStatusLabel(entry.status)}</Badge>
             {competition.resultsDeclaredAt && award !== "none" ? <Badge tone={HONOUR_AWARDS.has(award) ? "accent" : "neutral"}>{challengeAwardLabel(entry)}</Badge> : null}
+            {competition.resultsDeclaredAt && award !== "none" && badgeImageForEntry(competition, entry) ? <img src={badgeImageForEntry(competition, entry)} alt="" style={{ width: 48, height: 48, objectFit: "contain" }} /> : null}
           </div>
         </div>
         <dl className="ckm-challenge-hub__entry-stats">
