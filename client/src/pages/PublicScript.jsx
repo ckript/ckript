@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import { useDarkMode } from "../context/DarkModeContext";
 import { AuthContext } from "../context/AuthContext";
@@ -159,6 +159,10 @@ const PublicScript = () => {
     const next = `${location.pathname}${location.search || ""}`;
     return `/login?next=${encodeURIComponent(next)}`;
   }, [location.pathname, location.search]);
+
+  if (user && !authLoading && script) {
+    return <Navigate to={getScriptCanonicalPath(script)} replace />;
+  }
 
   if (loading) {
     return (

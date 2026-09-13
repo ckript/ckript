@@ -159,24 +159,11 @@ const ProjectCard = ({ project, userName, onBlock }) => {
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
           />
         ) : (
-          <div className={`absolute inset-0 overflow-hidden flex flex-col items-center justify-center gap-3 ${
-            dark ? "bg-gradient-to-br from-[#081527] via-[#0d2a46] to-[#113960]" : "bg-gradient-to-br from-[#dce9f8] via-[#c7dbf3] to-[#b5d0ef]"
-          }`}>
-            <div className={`absolute w-56 h-56 rounded-full border ${dark ? "border-white/10" : "border-[#2f5f90]/18"}`} />
-            <div className={`absolute w-40 h-40 rounded-full border ${dark ? "border-white/14" : "border-[#2f5f90]/28"}`} />
-
-            <div className={`relative flex items-center justify-center w-[92px] h-[92px] rounded-[24px] border backdrop-blur-xl ${
-              dark
-                ? "bg-[#07203b]/78 border-[#3e6e98]/55 shadow-[0_18px_40px_rgba(4,11,20,0.5)]"
-                : "bg-white/75 border-white shadow-[0_16px_35px_rgba(30,66,110,0.18)]"
-            }`}>
-              <svg className={`w-8 h-8 ${dark ? "text-white/80" : "text-[#2b557f]"}`} fill="none" stroke="currentColor" strokeWidth={1.9} viewBox="0 0 24 24">
-                <rect x="3" y="4" width="18" height="16" rx="3" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M7 15l3-3 2.6 2.6L15.5 11 18 13.5" />
-                <circle cx="16.5" cy="8.5" r="1.4" fill="currentColor" stroke="none" />
-              </svg>
-            </div>
-          </div>
+          <img
+            src="/common-thumbnail.png"
+            alt="Project placeholder"
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+          />
         )}
 
         {/* Bottom scrim — always present for consistent fade into card body */}

@@ -471,7 +471,7 @@ export default function ProjectDetailMobile({
       <div className="ckm-project__hero">
         {cover
           ? <img className="ckm-project__cover" src={cover} alt="" />
-          : <div className="ckm-project__cover ckm-project__cover--empty" aria-hidden="true"><span className="material-symbols-outlined">movie</span></div>}
+          : <img className="ckm-project__cover" src="/common-thumbnail.png" alt="" />}
         <div className="ckm-project__hero-meta">
           <Badge tone={projectStatus.tone}>{projectStatus.label}</Badge>
           <Badge tone="neutral" variant="outline">{formatMoney(script.price)}</Badge>

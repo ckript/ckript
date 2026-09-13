@@ -268,17 +268,6 @@ export function buildEditorOverflowItems({
     });
   }
 
-  // A competition entry is written, submitted and judged — it never goes
-  // through the publish wizard, so offering its first step is a dead end.
-  if (hasFullAccess && !competitionMode) {
-    items.push({
-      id: "continue",
-      label: "Continue to details",
-      hint: "Genre, cast, pricing and publishing",
-      icon: "arrow_forward",
-    });
-  }
-
   return items;
 }
 

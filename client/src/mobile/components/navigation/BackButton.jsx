@@ -26,28 +26,13 @@ export default function BackButton({
   const { goBack } = useMobileBack(to);
   const handle = onBack || goBack;
 
-  if (!label) {
-    return (
-      <IconButton
-        icon="arrow_back_ios_new"
-        label={accessibleLabel}
-        onClick={handle}
-        className={`ckm-back ${className}`.trim()}
-        {...rest}
-      />
-    );
-  }
-
   return (
-    <button
-      type="button"
+    <IconButton
+      icon="arrow_back_ios_new"
+      label={label ? `${accessibleLabel}: ${label}` : accessibleLabel}
       onClick={handle}
-      aria-label={`${accessibleLabel}: ${label}`}
-      className={`ckm-back ckm-back--labelled ${className}`.trim()}
+      className={`ckm-back ${className}`.trim()}
       {...rest}
-    >
-      <Icon name="arrow_back_ios_new" size={18} />
-      <span className="ckm-back__label">{label}</span>
-    </button>
+    />
   );
 }

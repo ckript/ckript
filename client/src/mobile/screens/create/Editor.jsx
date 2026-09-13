@@ -212,6 +212,15 @@ export default function Editor() {
           aria-expanded={overflowOpen}
           onClick={() => setOverflowOpen(true)}
         />
+        
+        {hasFullAccess && !competitionMode && (
+          <IconButton
+            icon="arrow_forward_ios"
+            label="Continue to details"
+            variant="soft"
+            onClick={overflowActions.continue}
+          />
+        )}
       </div>
 
       {/* The banner slot: pinned under the bar rather than in the scroll body,
@@ -249,16 +258,7 @@ export default function Editor() {
         </InlineMessage>
       )}
 
-      {error && (
-        <InlineMessage
-          tone="error"
-          variant="panel"
-          className="ckm-editor__notice"
-          action={<Button size="sm" variant="tertiary" onClick={() => setError("")}>Dismiss</Button>}
-        >
-          {error}
-        </InlineMessage>
-      )}
+
 
       {competitionEditor.panel}
     </>
