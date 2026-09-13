@@ -41,7 +41,6 @@ import {
 import "./ChallengeRegisterMobile.css";
 
 function RegistrationSuccess({ competition, paths, state }) {
-  const [copied, setCopied] = useState(false);
   const eventId = state.success?.entry?.eventId || "";
   const invoice = state.success?.invoice || null;
   const takeInvoice = async () => {
@@ -59,7 +58,7 @@ function RegistrationSuccess({ competition, paths, state }) {
       <Badge tone="success">Registration complete</Badge>
       <h2 id="challenge-register-success">You&apos;re in.</h2>
       <p>Your place in <strong>{competition.name}</strong> is confirmed. Keep this Event ID with your records.</p>
-      <div className="ckm-challenge-register__event-id"><span>{eventId}</span><IconButton icon={copied ? "check" : "content_copy"} label={copied ? "Event ID copied" : "Copy Event ID"} onClick={() => { navigator.clipboard?.writeText(eventId); setCopied(true); setTimeout(() => setCopied(false), 2000); }} /></div>
+      <div className="ckm-challenge-register__event-id"><span>{eventId}</span></div>
       <div className="ckm-challenge-register__success-actions">
         <Button fullWidth to={paths.dashboard}>Open challenge dashboard</Button>
         {invoice?._id ? <Button fullWidth variant="secondary" icon="receipt_long" pending={state.invoiceBusy} pendingLabel="Preparing invoice…" onClick={takeInvoice}>Download invoice {invoice.invoiceNumber}</Button> : null}
