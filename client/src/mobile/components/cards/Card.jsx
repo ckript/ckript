@@ -71,9 +71,7 @@ export function CardMedia({
       {src ? (
         <img className="ckm-card__image" src={src} alt={alt} loading="lazy" decoding="async" />
       ) : (
-        <div className="ckm-card__placeholder">
-          <span className="material-symbols-outlined" aria-hidden="true">{placeholderIcon}</span>
-        </div>
+        <img className="ckm-card__image" src="/common-thumbnail.png" alt="Placeholder" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       )}
       {overlay && <div className="ckm-card__media-overlay">{overlay}</div>}
       {children}

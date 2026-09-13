@@ -33,7 +33,7 @@ import { useToast } from "../../components/feedback/toastContext";
 const TONE = Object.freeze({ error: "error", warning: "warning", info: "info" });
 
 export default function useCreateProjectToasts() {
-  const { toastMessage, setToastMessage } = useCreateProject();
+  const { toastMessage, setToastMessage, error, setError } = useCreateProject();
   const toast = useToast();
   const seenRef = useRef(null);
 
@@ -61,4 +61,14 @@ export default function useCreateProjectToasts() {
     // has nothing left to clear, and a later message is unambiguously new.
     setToastMessage(null);
   }, [toastMessage, setToastMessage, toast]);
+  useEffect(() => {
+    if (error) {
+      toast.show({
+        tone: "warning",
+        title: error,
+        duration: 3000
+      });
+      setError("");
+    }
+  }, [error, setError, toast]);
 }

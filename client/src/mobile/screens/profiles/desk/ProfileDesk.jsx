@@ -76,14 +76,11 @@ export function DeskBar({ back = null, title = "", action = null, own = false })
 
 function DeskBarBack({ label = "Back", to = "", onClick = null }) {
   const content = (
-    <>
-      <span className="material-symbols-outlined" aria-hidden="true">arrow_back_ios_new</span>
-      <span className="ckm-desk__back-label">{label}</span>
-    </>
+    <span className="material-symbols-outlined" aria-hidden="true">arrow_back_ios_new</span>
   );
   return to
-    ? <Link className="ckm-desk__back" to={to}>{content}</Link>
-    : <button type="button" className="ckm-desk__back" onClick={onClick}>{content}</button>;
+    ? <Link className="ckm-desk__back" to={to} aria-label={label}>{content}</Link>
+    : <button type="button" className="ckm-desk__back" onClick={onClick} aria-label={label}>{content}</button>;
 }
 
 function DeskBarAction({ label, icon = "", to = "", onClick = null, buttonRef = null, ...rest }) {

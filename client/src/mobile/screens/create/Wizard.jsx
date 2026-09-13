@@ -255,16 +255,7 @@ export default function Wizard() {
         </InlineMessage>
       )}
 
-      {error && (
-        <InlineMessage
-          tone="error"
-          variant="panel"
-          className="ckm-create-project__notice"
-          action={<Button size="sm" variant="tertiary" onClick={() => setError("")}>Dismiss</Button>}
-        >
-          {error}
-        </InlineMessage>
-      )}
+
     </>
   );
 

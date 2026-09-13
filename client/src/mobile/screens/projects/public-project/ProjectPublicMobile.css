@@ -1,5 +1,6 @@
 .ckm .ckm-public-project__page { display: grid; gap: var(--ckm-space-4); padding: var(--ckm-space-4); padding-bottom: calc(var(--ckm-space-8) + env(safe-area-inset-bottom)); }
 .ckm .ckm-public-project__cover { display: grid; min-height: 180px; place-items: center; overflow: hidden; border-radius: var(--ckm-r-lg); background: var(--ckm-bg-soft); color: var(--ckm-text-3); font-family: var(--ckm-display); font-size: var(--ckm-text-title); }
+.ckm .ckm-public-project__cover--empty { background: linear-gradient(135deg, var(--ckm-bg-soft) 0%, var(--ckm-line) 100%); color: var(--ckm-faint); }
 .ckm .ckm-public-project__cover img { width: 100%; height: 100%; max-height: 260px; object-fit: cover; }
 .ckm .ckm-public-project__hero, .ckm .ckm-public-project__section { padding: var(--ckm-space-4); border: 1px solid var(--ckm-line); border-radius: var(--ckm-r-lg); background: var(--ckm-bg); }
 .ckm .ckm-public-project__eyebrow { margin: 0 0 var(--ckm-space-2); color: var(--ckm-text-3); font-size: var(--ckm-text-caption); font-weight: var(--ckm-weight-bold); letter-spacing: .08em; text-transform: uppercase; }
