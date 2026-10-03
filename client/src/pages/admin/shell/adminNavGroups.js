@@ -34,7 +34,7 @@ export const ADMIN_NAV_GROUPS = [
   },
   {
     title: "Communication",
-    keys: ["messages", "queries", "meetings", "direct-email"],
+    keys: ["messages", "queries", "meetings", "consultations", "direct-email"],
   },
   {
     title: "Archive",

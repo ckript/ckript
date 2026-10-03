@@ -1210,7 +1210,7 @@ export const sendMeetingAcceptedWriterEmail = async (
         title: `Meeting details: ${producerName}`,
         preheader: `Your meeting with ${producerName} about "${scriptName}" is confirmed.`,
         blocks: [
-          heading({ eyebrow: "Meeting confirmed", title: "Meeting details confirmed.", subtitle: `You have accepted the meeting request from ${producerName} regarding your script “${scriptName}”.` }),
+          heading({ eyebrow: "Meeting confirmed", title: "Meeting details confirmed.", subtitle: `${producerName} has accepted your meeting request regarding the script “${scriptName}”.` }),
           paragraphs(`Hi ${writerName},`),
           facts([["Date", date], ["Time", time], { label: "Meeting link", value: meetingLink, href: meetingLink }]),
           paragraphs("Use the link above to join the meeting at the scheduled time."),
@@ -1218,7 +1218,7 @@ export const sendMeetingAcceptedWriterEmail = async (
           fineprint("This is an automated email from Ckript. We wish you a productive meeting."),
         ],
       }),
-      text: `Hi ${writerName},\n\nYou have accepted the meeting request from ${producerName} regarding your script "${scriptName}".\n\nDate: ${date}\nTime: ${time}\nMeeting Link: ${meetingLink}\n\nPlease use the link above to join the meeting at the scheduled time.\n\nTeam ${CONTACTS.name}${signatureText()}`,
+      text: `Hi ${writerName},\n\n${producerName} has accepted your meeting request regarding the script "${scriptName}".\n\nDate: ${date}\nTime: ${time}\nMeeting Link: ${meetingLink}\n\nPlease use the link above to join the meeting at the scheduled time.\n\nTeam ${CONTACTS.name}${signatureText()}`,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -1420,5 +1420,105 @@ export const sendExternalRegistrationDecisionEmail = async (
   } catch (error) {
     console.error("Error sending external registration decision email:", error.message);
     return { success: false, error: error.message };
+  }
+};
+
+export const sendConsultationPaidWriterEmail = async (toEmail, opts) => {
+  try {
+    const { writerName, producerName, amount, currency, date, time } = opts;
+    const html = renderMailDocument({
+      title: "Consultation Request Sent",
+      preheader: "Your paid consultation request has been sent to the producer.",
+      blocks: [
+        fragment(
+          paragraphs(
+            `Hi ${writerName},\n\nYou have successfully paid ${amount} ${currency} for your consultation request with ${producerName}.\n\nDate: ${date}\nTime: ${time}\n\nThe professional will now review your request. If they accept, you will receive an email with the Google Meet link. If they reject, your money will be refunded within a week.`
+          )
+        ),
+        button({ text: "View Request", url: buildClientUrl("/profile") }),
+        fineprint("If you have any questions, reply to this email.")
+      ]
+    });
+
+    const transporter = createTransporter();
+    const mailOptions = {
+      from: mailFrom(),
+      to: toEmail,
+      subject: `Consultation Request Sent to ${producerName}`,
+      html
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { success: true };
+  } catch (err) {
+    console.error("sendConsultationPaidWriterEmail Error:", err);
+    return { success: false, error: err };
+  }
+};
+
+export const sendConsultationBookedEmail = async (toEmail, opts) => {
+  try {
+    const { professionalName, writerName, topic, date, time, amount, currency } = opts;
+    const html = renderMailDocument({
+      title: "New Consultation Request",
+      preheader: "A writer has requested a paid meeting with you.",
+      blocks: [
+        fragment(
+          paragraphs(
+            `Hi ${professionalName},\n\n${writerName} has requested a paid consultation with you.\n\nTopic: ${topic}\nDate: ${date}\nTime: ${time}\n\nYou will receive ${amount} ${currency} for this session.\n\nPlease click below to review and Accept or Reject the request from your dashboard.`
+          )
+        ),
+        button({ text: "Review Request (Dashboard)", url: buildClientUrl("/dashboard") }),
+        fineprint("Please respond promptly so the writer can be notified.")
+      ]
+    });
+
+    const transporter = createTransporter();
+    const mailOptions = {
+      from: mailFrom(),
+      to: toEmail,
+      subject: `New Consultation Request from ${writerName}`,
+      html
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { success: true };
+  } catch (err) {
+    console.error("sendConsultationBookedEmail Error:", err);
+    return { success: false, error: err };
+  }
+};
+
+
+export const sendConsultationRejectedEmail = async (toEmail, opts) => {
+  try {
+    const { writerName, producerName, amount, currency } = opts;
+    const html = renderMailDocument({
+      title: "Consultation Request Declined",
+      preheader: `${producerName} has declined your consultation request.`,
+      blocks: [
+        fragment(
+          paragraphs(
+            `Hi ${writerName},\n\nUnfortunately, ${producerName} has rejected your consultation request.\n\nYour payment of ${amount} ${currency} will be fully refunded to your original payment method within a week.`
+          )
+        ),
+        button({ text: "View Dashboard", url: buildClientUrl("/profile") }),
+        fineprint("If you have any questions about your refund, please reply to this email.")
+      ]
+    });
+
+    const transporter = createTransporter();
+    const mailOptions = {
+      from: mailFrom(),
+      to: toEmail,
+      subject: `Consultation Declined by ${producerName}`,
+      html
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { success: true };
+  } catch (err) {
+    console.error("sendConsultationRejectedEmail Error:", err);
+    return { success: false, error: err };
   }
 };

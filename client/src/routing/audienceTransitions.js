@@ -32,7 +32,7 @@ export const AUDIENCE_ROUTE_RULES = Object.freeze([
   { id: "member-dashboard", patterns: ["/dashboard"], audiences: [AUDIENCE.WRITER, AUDIENCE.INDUSTRY] },
   { id: "authenticated-project", patterns: ["/script/:id/pay", "/script/:projectHeading/:writerUsername", "/script/:id"], audiences: [AUDIENCE.WRITER, AUDIENCE.INDUSTRY] },
 
-  { id: "admin", patterns: ["/admin", "/admin/competitions/:id", "/admin/scripts/:id", "/admin/agreements"], roles: ["admin"] },
+  { id: "admin", patterns: ["/admin", "/admin/competitions/:id", "/admin/scripts/:id", "/admin/agreements"] },
   { id: "finance", patterns: ["/finance"], roles: ["admin", "finance"] },
   // Judge only — NOT admin, unlike the finance rule above. The server refuses an admin at
   // /api/judge for the same reason: every score has to be attributable to a named judge, and an

@@ -29,7 +29,7 @@ export function writeIndustryDashboardQuery(current = "", patch = {}) {
   return params;
 }
 
-export function normalizeIndustryDashboardPayload({ dash, wallet, transactions, requests, watchlist } = {}) {
+export function normalizeIndustryDashboardPayload({ dash, wallet, transactions, requests, watchlist, consultations } = {}) {
   const transactionRows = transactions?.transactions ?? transactions;
   return {
     dash: dash || null,
@@ -37,6 +37,7 @@ export function normalizeIndustryDashboardPayload({ dash, wallet, transactions, 
     transactions: list(transactionRows),
     purchaseRequests: list(requests),
     watchlist: list(watchlist),
+    consultations: list(consultations),
   };
 }
 
@@ -50,6 +51,7 @@ export async function loadIndustryDashboard({ signal, professional = true } = {}
       ["transactions", () => api.get("/transactions", { signal, params: { limit: 6 } })],
       ["requests", () => api.get("/scripts/purchase-requests/mine", { signal, params: { limit: 12 } })],
       ["watchlist", () => api.get("/users/watchlist", { signal, params: { limit: 8 } })],
+      ["consultations", () => api.get("/consultations/professional", { signal })],
     ] : []),
   ];
   const names = legs.map(([name]) => name);

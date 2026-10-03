@@ -103,6 +103,7 @@ const TABS = [
   { key: "writers", label: "Writers", counted: true },
   { key: "finance", label: "Finance", counted: false },
   { key: "market", label: "Market", counted: false },
+  { key: "consultations", label: "Consultations", counted: true },
 ];
 
 const PER_PAGE_OPTIONS = [4, 6, 10];
@@ -167,6 +168,7 @@ const ProducerDashboardPage = () => {
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [purchaseRequests, setPurchaseRequests] = useState([]);
+  const [consultations, setConsultations] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [failures, setFailures] = useState({});
   const [revealedWriters, setRevealedWriters] = useState([]);
@@ -189,6 +191,8 @@ const ProducerDashboardPage = () => {
   const [confirmError, setConfirmError] = useState("");
   const [meeting, setMeeting] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [actioningId, setActioningId] = useState(null);
+  const [needsCalendar, setNeedsCalendar] = useState(false);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -199,6 +203,7 @@ const ProducerDashboardPage = () => {
       if (!next.failures.wallet) setWallet(next.wallet);
       if (!next.failures.transactions) setTransactions(next.transactions);
       if (!next.failures.requests) setPurchaseRequests(next.purchaseRequests);
+      if (!next.failures.consultations) setConsultations(next.consultations);
       if (!next.failures.watchlist) setWatchlist(next.watchlist);
       setFailures(next.failures || {});
       setDashFailed(Boolean(next.failures.dash));
@@ -341,6 +346,7 @@ const ProducerDashboardPage = () => {
 
   const tabCounts = {
     deals: allDeals.length,
+    consultations: consultations.filter(c => c.status === "awaiting_response").length,
     matched: matchedScripts.length,
     writers: revealedWriters.length,
     finance: transactions.length,
@@ -361,6 +367,45 @@ const ProducerDashboardPage = () => {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const closeMenus = () => setOpenMenu(null);
+
+  
+  const handleConnectCalendar = async () => {
+    try {
+      const returnTo = `${window.location.pathname}${window.location.search}`;
+      const { data } = await api.post("/google-calendar/auth-url", { returnTo });
+      window.location.href = data.url;
+    } catch (error) {
+      setActionError("Couldn't connect to Google Calendar at this time.");
+    }
+  };
+
+  const handleAcceptConsultation = async (id) => {
+    setActioningId(id + "_accept");
+    setNeedsCalendar(false);
+    setActionError("");
+    try {
+      await api.post(`/consultations/${id}/accept`);
+      setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted" } : c));
+    } catch (error) {
+      if (error?.response?.status === 428) {
+        setNeedsCalendar(true);
+      }
+      setActionError(error?.response?.data?.message || "Couldn't accept consultation.");
+    } finally {
+      setActioningId(null);
+    }
+  };
+  const handleRejectConsultation = async (id) => {
+    setActioningId(id + "_reject");
+    try {
+      await api.post(`/consultations/${id}/reject`, { reason: "Declined" });
+      setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "rejected" } : c));
+    } catch (error) {
+      setActionError(error?.response?.data?.message || "Couldn't reject consultation.");
+    } finally {
+      setActioningId(null);
+    }
+  };
 
   const handleRefresh = () => {
     closeMenus();
@@ -702,6 +747,47 @@ const ProducerDashboardPage = () => {
         </table>
       )}
     </section>
+  );
+
+  
+  const consultationsBlock = (
+    <div className="ck-ledger__section-head" style={{ marginTop: "24px" }}>
+      <div>
+        <h2 className="ck-ledger__section-title">Consultations</h2>
+        <p className="ck-ledger__section-sub">Manage paid consultation requests from writers</p>
+      </div>
+            <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        {actionError && (
+          <div style={{ padding: "12px", background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: "8px" }}>
+            <p style={{ margin: 0 }}>{actionError}</p>
+            {needsCalendar && (
+              <button onClick={handleConnectCalendar} style={{ marginTop: "8px", padding: "6px 12px", background: "#ef4444", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "600" }}>
+                Connect Google Calendar
+              </button>
+            )}
+          </div>
+        )}
+        {consultations.length === 0 && <p className="ck-ledger__section-sub">No consultations found.</p>}
+        {consultations.map(c => (
+          <div key={c._id} style={{ padding: "16px", border: "1px solid var(--ck-border)", borderRadius: "8px", background: "white" }}>
+            <h4 style={{ margin: "0 0 8px 0", fontSize: "16px", fontWeight: "600" }}>{c.topic} (with {c.writer?.name || "Writer"})</h4>
+            <div style={{ fontSize: "14px", color: "var(--ck-muted)", marginBottom: "16px" }}>
+              <p>Amount: {c.amount / 100} {c.currency}</p>
+              <p>Status: <strong>{c.status}</strong></p>
+              <p>Scheduled: {new Date(c.scheduledStart).toLocaleString()}</p>
+              {c.additionalMessage && <p>Message: {c.additionalMessage}</p>}
+              {c.googleMeetUrl && <p>Meet Link: <a href={c.googleMeetUrl} target="_blank" style={{ color: "var(--ck-accent)" }}>Join Meeting</a></p>}
+            </div>
+            {c.status === "awaiting_response" && (
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"} onClick={() => handleAcceptConsultation(c._id)} style={{ padding: "8px 16px", background: "var(--ck-accent)", color: "white", borderRadius: "4px", border: "none", cursor: (actioningId ? "not-allowed" : "pointer"), fontWeight: "600", opacity: (actioningId ? 0.7 : 1) }}>{actioningId === c._id + "_accept" ? "Approving..." : "Approve"}</button>
+                <button disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"} onClick={() => handleRejectConsultation(c._id)} style={{ padding: "8px 16px", background: "transparent", color: "var(--ck-accent)", borderRadius: "4px", border: "1px solid var(--ck-accent)", cursor: (actioningId ? "not-allowed" : "pointer"), fontWeight: "600", opacity: (actioningId ? 0.7 : 1) }}>{actioningId === c._id + "_reject" ? "Rejecting..." : "Reject"}</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 
   const listBlock = (
@@ -1061,6 +1147,7 @@ const ProducerDashboardPage = () => {
               {tab === "writers" && writersBlock(true)}
               {tab === "finance" && moneyBlock(true)}
               {tab === "market" && marketBlock}
+                {tab === "consultations" && consultationsBlock}
               {(tab === "deals" || tab === "matched") && (
                 <>
                   {listBlock}
