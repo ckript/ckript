@@ -581,7 +581,7 @@ const Profile = () => {
         time: pitchData.time,
         duration: pitchData.duration,
         currency: pitchData.currency || "INR",
-        topic: "Pitch Script",
+        topic: "Book Consultation",
         additionalMessage: pitchData.note
       });
       setPitchSuccess(true);
@@ -1255,7 +1255,7 @@ const Profile = () => {
                             disabled={isBlockedByCurrent || blockedByProfile || followLoading}
                             className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border disabled:opacity-55 disabled:cursor-not-allowed ${t.followIdle}`}
                           >
-                            Pitch Script
+                            Book Consultation
                           </button>
                         )}
                         <button
@@ -1318,7 +1318,7 @@ const Profile = () => {
                                   disabled={isBlockedByCurrent || blockedByProfile || followLoading}
                                   className={`px-3 sm:px-4 py-1.5 rounded-xl text-[12px] sm:text-[13px] font-bold transition-all border disabled:opacity-55 disabled:cursor-not-allowed ${t.followIdle}`}
                                 >
-                                  Pitch Script
+                                  Book Consultation
                                 </button>
                               )}
                               <button
@@ -3290,18 +3290,18 @@ const Profile = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className={`text-lg font-extrabold mb-2 ${dark ? "text-white" : "text-gray-900"}`}>Pitch Sent!</h3>
+                <h3 className={`text-lg font-extrabold mb-2 ${dark ? "text-white" : "text-gray-900"}`}>Request Sent!</h3>
                 <p className={`text-sm ${dark ? "text-white/50" : "text-gray-500"}`}>
-                  Your pitch to {profile.name} was successfully submitted.
+                  Your consultation request was successfully submitted.
                 </p>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className={`text-lg font-extrabold ${dark ? "text-white" : "text-gray-900"}`}>Pitch Script</h3>
+                    <h3 className={`text-lg font-extrabold ${dark ? "text-white" : "text-gray-900"}`}>Book Consultation</h3>
                     <p className={`text-sm mt-1 ${dark ? "text-white/50" : "text-gray-500"}`}>
-                      Select a script to discuss with {profile.name}
+                      Book a consultation call with a Film Industry Professional
                 </p>
                   </div>
                   <button
@@ -3408,12 +3408,12 @@ const Profile = () => {
 
                   <div>
                     <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
-                      Pitch Note (Optional)
+                      What would you like to discuss? (Optional)
                     </label>
                     <textarea
                       value={pitchData.note}
                       onChange={(e) => setPitchData({ ...pitchData, note: e.target.value })}
-                      placeholder="Add a brief note about why this fits their mandate..."
+                      placeholder="Add a brief note or any questions you have for the consultation..."
                       className={`w-full min-h-[100px] p-3 rounded-xl border text-[13px] outline-none resize-none transition-all ${
                         dark 
                           ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20 placeholder-white/20" 

@@ -12,7 +12,7 @@ import { decryptToken } from "../utils/tokenCrypto.js";
 import { 
   sendMeetingInvitationEmail, sendMeetingAcceptedWriterEmail, sendMeetingAcceptedEmail, 
   sendMeetingRejectedEmail, sendConsultationRejectedEmail,
-  sendConsultationBookedEmail,
+  sendConsultationBookedEmail, sendMeetingRescheduledWriterEmail, sendMeetingRescheduledProfessionalEmail,
   sendConsultationPaidWriterEmail
 } from "../utils/emailService.js";
 
@@ -102,7 +102,7 @@ export const createOrder = async (req, res) => {
         topic: consultation.topic,
         date: consultation.scheduledStart.toLocaleDateString(),
         time: consultation.scheduledStart.toLocaleTimeString(),
-        amount: consultation.professionalAmount / 100,
+        amount: consultation.amount / 100,
         currency: consultation.currency,
         });
     }
@@ -180,7 +180,7 @@ export const verifyPayment = async (req, res) => {
         topic: consultation.topic,
         date: consultation.scheduledStart.toLocaleDateString(),
         time: consultation.scheduledStart.toLocaleTimeString(),
-        amount: consultation.professionalAmount / 100, // format from paise
+        amount: consultation.amount / 100, // format from paise
         currency: consultation.currency,
         });
     }
@@ -517,5 +517,89 @@ export const adminGetRefunds = async (req, res) => {
     return res.status(200).json(refunds);
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch refunds." });
+  }
+};
+
+
+export const rescheduleConsultation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newStartISO } = req.body;
+    
+    if (!newStartISO) return res.status(400).json({ message: "New start time is required." });
+
+    const consultation = await Consultation.findById(id).populate("writer professional");
+    if (!consultation) return res.status(404).json({ message: "Consultation not found." });
+    
+    if (String(consultation.professional._id) !== String(req.user._id)) {
+      return res.status(403).json({ message: "Not authorized." });
+    }
+
+    const professional = await User.findById(req.user._id).select("+googleCalendar.refreshTokenEnc").lean();
+    
+    let meetingLink = "https://meet.google.com/aut-omat-icly";
+    let googleEventId = "dummy_event_id";
+      
+    // Attempt calendar if connected
+    if (professional.googleCalendar?.connected && professional.googleCalendar?.refreshTokenEnc) {
+      try {
+        const { decryptToken } = require("../utils/accountSecurity.js");
+        const { getAccessTokenFromRefresh, createMeetingEvent } = require("../utils/googleCalendar.js");
+        
+        const refreshToken = decryptToken(professional.googleCalendar.refreshTokenEnc);
+        const { accessToken } = await getAccessTokenFromRefresh(refreshToken);
+        
+        const start = new Date(newStartISO);
+        const end = new Date(start.getTime() + consultation.duration * 60000);
+        
+        const event = await createMeetingEvent({
+          accessToken,
+          summary: `Ckript Consultation: ${consultation.writer.name} & ${professional.name}`,
+          description: `Topic: ${consultation.topic}\n\n${consultation.additionalMessage || ""}`,
+          startISO: start.toISOString(),
+          endISO: end.toISOString(),
+          timeZone: consultation.timezone,
+          attendees: [professional.email, consultation.writer.email],
+        });
+        meetingLink = event.meetLink;
+        googleEventId = event.eventId;
+      } catch (err) {
+        console.error("Google Calendar API Error (bypassed on reschedule):", err);
+      }
+    }
+
+    const newStart = new Date(newStartISO);
+    const newEnd = new Date(newStart.getTime() + consultation.duration * 60000);
+
+    consultation.scheduledStart = newStart;
+    consultation.scheduledEnd = newEnd;
+    consultation.googleMeetUrl = meetingLink;
+    consultation.googleEventId = googleEventId;
+    consultation.status = "accepted";
+    consultation.acceptedAt = new Date();
+    await consultation.save();
+
+    await sendMeetingRescheduledWriterEmail(consultation.writer.email, {
+      writerName: consultation.writer.name,
+      producerName: professional.name,
+      scriptName: consultation.topic,
+      date: newStart.toLocaleDateString(),
+      time: newStart.toLocaleTimeString(),
+      meetingLink,
+    });
+
+    await sendMeetingRescheduledProfessionalEmail(professional.email, {
+      professionalName: professional.name,
+      writerName: consultation.writer.name,
+      scriptName: consultation.topic,
+      date: newStart.toLocaleDateString(),
+      time: newStart.toLocaleTimeString(),
+      meetingLink,
+    });
+
+    return res.status(200).json({ message: "Consultation rescheduled successfully.", consultation });
+  } catch (error) {
+    console.error("Reschedule Consultation Error:", error);
+    return res.status(500).json({ message: "Failed to reschedule consultation." });
   }
 };

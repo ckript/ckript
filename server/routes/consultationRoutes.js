@@ -1,12 +1,12 @@
 import express from "express";
 import protect from "../middleware/authMiddleware.js";
-import {
+import { 
   createOrder,
   verifyPayment,
   getWriterConsultations,
   getProfessionalConsultations,
   getConsultationDetails,
-  acceptConsultation,
+   acceptConsultation, rescheduleConsultation,
   rejectConsultation,
   completeConsultation,
   cancelConsultation
@@ -22,6 +22,7 @@ router.get("/:id", protect, getConsultationDetails);
 router.post("/:id/cancel", protect, cancelConsultation);
 router.post("/:id/accept", protect, acceptConsultation);
 router.post("/:id/reject", protect, rejectConsultation);
+router.post("/:id/reschedule", protect, rescheduleConsultation);
 router.post("/:id/complete", protect, completeConsultation);
 
 export default router;

@@ -176,6 +176,7 @@ const ProducerDashboardPage = () => {
 
   // ── View state ────────────────────────────────────────────────────────────
   const [tab, setTab] = useState("deals");
+  const [consultationSubTab, setConsultationSubTab] = useState("action_required");
   const [statuses, setStatuses] = useState([]);
   const [sort, setSort] = useState("days");
   const [page, setPage] = useState(1);
@@ -192,6 +193,7 @@ const ProducerDashboardPage = () => {
   const [meeting, setMeeting] = useState(null);
   const [actionError, setActionError] = useState("");
   const [actioningId, setActioningId] = useState(null);
+  const [rescheduleData, setRescheduleData] = useState(null); // { id: string, date: string }
   const [needsCalendar, setNeedsCalendar] = useState(false);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
@@ -395,6 +397,31 @@ const ProducerDashboardPage = () => {
       setActioningId(null);
     }
   };
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleData?.date) return alert("Please select a new date and time.");
+    
+    if (!window.confirm("Are you sure you want to reschedule this consultation and send an email to the writer with the new time?")) {
+      return;
+    }
+    
+    const id = rescheduleData.id;
+    setActioningId(id + "_reschedule");
+    try {
+      const res = await api.post(`/consultations/${id}/reschedule`, { newStartISO: new Date(rescheduleData.date).toISOString() });
+      if (res.data) {
+        setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted", scheduledStart: res.data.consultation.scheduledStart, scheduledEnd: res.data.consultation.scheduledEnd } : c));
+        setRescheduleData(null);
+          // Show professional success pop-up
+          window.alert("Success! The consultation has been beautifully rescheduled. The updated time and Google Meet link have been emailed to both you and the writer.");
+        }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to reschedule.");
+    } finally {
+      setActioningId(null);
+    }
+  };
+
   const handleRejectConsultation = async (id) => {
     setActioningId(id + "_reject");
     try {
@@ -750,45 +777,137 @@ const ProducerDashboardPage = () => {
   );
 
   
-  const consultationsBlock = (
-    <div className="ck-ledger__section-head" style={{ marginTop: "24px" }}>
-      <div>
-        <h2 className="ck-ledger__section-title">Consultations</h2>
-        <p className="ck-ledger__section-sub">Manage paid consultation requests from writers</p>
+  const consultationsBlock = (() => {
+    const filteredConsultations = consultations.filter(c => {
+      if (consultationSubTab === "action_required") return c.status === "awaiting_response";
+      if (consultationSubTab === "upcoming") return c.status === "accepted" || c.status === "meeting_scheduled";
+      if (consultationSubTab === "completed") return c.status === "completed" || c.status === "meeting_completed" || c.status === "meeting_in_progress";
+      if (consultationSubTab === "declined") return c.status === "rejected" || c.status === "refund_pending" || c.status === "refunded";
+      return true;
+    });
+
+    const getCount = (id) => {
+      return consultations.filter(c => {
+        if (id === "action_required") return c.status === "awaiting_response";
+        if (id === "upcoming") return c.status === "accepted" || c.status === "meeting_scheduled";
+        if (id === "completed") return c.status === "completed" || c.status === "meeting_completed" || c.status === "meeting_in_progress";
+        if (id === "declined") return c.status === "rejected" || c.status === "refund_pending" || c.status === "refunded";
+        return false;
+      }).length;
+    };
+
+    return (
+    <div style={{ marginTop: "24px" }}>
+      <div className="ck-ledger__section-head">
+        <div>
+          <h2 className="ck-ledger__section-title">Consultations</h2>
+          <p className="ck-ledger__section-sub">Manage paid consultation requests from writers</p>
+        </div>
       </div>
-            <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+      
+      <div style={{ marginTop: "16px", display: "flex", flexWrap: "wrap", gap: "10px", borderBottom: "1px solid #e2e8f0", paddingBottom: "16px" }}>
+        {[{id: "action_required", label: "Action Required"}, {id: "upcoming", label: "Upcoming"}, {id: "completed", label: "Completed"}, {id: "declined", label: "Declined"}].map(sub => {
+          const count = getCount(sub.id);
+          return (
+          <button
+            key={sub.id}
+            onClick={() => setConsultationSubTab(sub.id)}
+            style={{
+              padding: "6px 14px",
+              background: consultationSubTab === sub.id ? "var(--ck-dark)" : "transparent",
+              color: consultationSubTab === sub.id ? "white" : "var(--ck-muted)",
+              borderRadius: "20px",
+              border: consultationSubTab === sub.id ? "1px solid var(--ck-dark)" : "1px solid var(--ck-border)",
+              fontSize: "13px",
+              fontWeight: "600",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {sub.label} {count > 0 && `(${count})`}
+          </button>
+        )})}
+      </div>
+      
+      <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "24px" }}>
         {actionError && (
-          <div style={{ padding: "12px", background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: "8px" }}>
-            <p style={{ margin: 0 }}>{actionError}</p>
+          <div style={{ gridColumn: "1 / -1", padding: "16px", background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p style={{ margin: 0, fontWeight: "500" }}>{actionError}</p>
             {needsCalendar && (
-              <button onClick={handleConnectCalendar} style={{ marginTop: "8px", padding: "6px 12px", background: "#ef4444", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "600" }}>
+              <button onClick={handleConnectCalendar} style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", transition: "all 0.2s" }}>
                 Connect Google Calendar
               </button>
             )}
           </div>
         )}
-        {consultations.length === 0 && <p className="ck-ledger__section-sub">No consultations found.</p>}
-        {consultations.map(c => (
-          <div key={c._id} style={{ padding: "16px", border: "1px solid var(--ck-border)", borderRadius: "8px", background: "white" }}>
-            <h4 style={{ margin: "0 0 8px 0", fontSize: "16px", fontWeight: "600" }}>{c.topic} (with {c.writer?.name || "Writer"})</h4>
-            <div style={{ fontSize: "14px", color: "var(--ck-muted)", marginBottom: "16px" }}>
-              <p>Amount: {c.amount / 100} {c.currency}</p>
-              <p>Status: <strong>{c.status}</strong></p>
-              <p>Scheduled: {new Date(c.scheduledStart).toLocaleString()}</p>
-              {c.additionalMessage && <p>Message: {c.additionalMessage}</p>}
-              {c.googleMeetUrl && <p>Meet Link: <a href={c.googleMeetUrl} target="_blank" style={{ color: "var(--ck-accent)" }}>Join Meeting</a></p>}
+        
+        {filteredConsultations.length === 0 && <p className="ck-ledger__section-sub" style={{ gridColumn: "1 / -1", marginTop: "12px", textAlign: "center", padding: "40px", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>No {consultationSubTab.replace('_', ' ')} consultations found.</p>}
+        
+        {filteredConsultations.map(c => (
+          <div key={c._id} style={{ display: "flex", flexDirection: "column", padding: "20px", border: "1px solid var(--ck-border)", borderRadius: "16px", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", transition: "transform 0.2s, box-shadow 0.2s" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+              <h4 style={{ margin: 0, fontSize: "17px", fontWeight: "700", color: "var(--ck-dark)", lineHeight: "1.3" }}>
+                {c.topic} 
+                <span style={{ display: "block", fontSize: "13px", fontWeight: "500", color: "var(--ck-muted)", marginTop: "4px" }}>with {c.writer?.name || "Writer"}</span>
+              </h4>
+              <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px", background: c.status === 'accepted' ? '#ecfdf5' : c.status === 'rejected' ? '#fef2f2' : '#fefce8', color: c.status === 'accepted' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#d97706' }}>
+                {c.status.replace('_', ' ')}
+              </span>
             </div>
-            {c.status === "awaiting_response" && (
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"} onClick={() => handleAcceptConsultation(c._id)} style={{ padding: "8px 16px", background: "var(--ck-accent)", color: "white", borderRadius: "4px", border: "none", cursor: (actioningId ? "not-allowed" : "pointer"), fontWeight: "600", opacity: (actioningId ? 0.7 : 1) }}>{actioningId === c._id + "_accept" ? "Approving..." : "Approve"}</button>
-                <button disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"} onClick={() => handleRejectConsultation(c._id)} style={{ padding: "8px 16px", background: "transparent", color: "var(--ck-accent)", borderRadius: "4px", border: "1px solid var(--ck-accent)", cursor: (actioningId ? "not-allowed" : "pointer"), fontWeight: "600", opacity: (actioningId ? 0.7 : 1) }}>{actioningId === c._id + "_reject" ? "Rejecting..." : "Reject"}</button>
+            
+            <div style={{ fontSize: "13px", color: "var(--ck-muted)", flexGrow: 1, display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Amount:</span> {c.amount / 100} {c.currency}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Date:</span> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+              {c.additionalMessage && <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", color: "#475569", fontStyle: "italic", marginTop: "4px" }}>"{c.additionalMessage}"</div>}
+              {c.googleMeetUrl && <div style={{ marginTop: "4px" }}><a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>Join Google Meet &rarr;</a></div>}
+            </div>
+            
+            {rescheduleData?.id === c._id && (
+              <div style={{ marginTop: "auto", borderTop: "1px solid #f1f5f9", paddingTop: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--ck-dark)" }}>Select New Date & Time:</label>
+                <input 
+                  type="datetime-local" 
+                  value={rescheduleData.date} 
+                  onChange={e => setRescheduleData({ ...rescheduleData, date: e.target.value })}
+                  style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--ck-border)", outline: "none" }}
+                />
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={handleRescheduleSubmit} disabled={actioningId === c._id + "_reschedule"} style={{ flex: 1, padding: "8px", background: "var(--ck-dark)", color: "white", border: "none", borderRadius: "6px", fontWeight: "600", cursor: (actioningId === c._id + "_reschedule" ? "wait" : "pointer"), opacity: (actioningId === c._id + "_reschedule" ? 0.7 : 1), transition: "all 0.2s" }}>{actioningId === c._id + "_reschedule" ? "Confirming..." : "Confirm"}</button>
+                  <button onClick={() => setRescheduleData(null)} style={{ padding: "8px 16px", background: "transparent", color: "var(--ck-muted)", border: "none", cursor: "pointer", fontWeight: "600" }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            
+            {c.status === "awaiting_response" && rescheduleData?.id !== c._id && (
+              <div style={{ display: "flex", gap: "12px", marginTop: "auto", borderTop: "1px solid #f1f5f9", paddingTop: "16px" }}>
+                <button
+                  onClick={() => handleAcceptConsultation(c._id)}
+                  disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"}
+                  style={{ flex: 1, padding: "10px", background: "#10b981", color: "white", border: "none", borderRadius: "8px", fontWeight: "600", cursor: (actioningId ? "not-allowed" : "pointer"), transition: "all 0.2s", opacity: (actioningId ? 0.7 : 1) }}
+                >
+                  {actioningId === c._id + "_accept" ? "Approving..." : "Approve"}
+                </button>
+                <button
+                  onClick={() => handleRejectConsultation(c._id)}
+                  disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"}
+                  style={{ flex: 1, padding: "10px", background: "white", color: "#ef4444", border: "1px solid #ef4444", borderRadius: "8px", fontWeight: "600", cursor: (actioningId ? "not-allowed" : "pointer"), transition: "all 0.2s", opacity: (actioningId ? 0.7 : 1) }}
+                >
+                  {actioningId === c._id + "_reject" ? "Rejecting..." : "Reject"}
+                </button>
+                <button
+                  onClick={() => setRescheduleData({ id: c._id, date: "" })}
+                  disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject" || actioningId === c._id + "_reschedule"}
+                  style={{ flex: 1, padding: "10px", background: "white", color: "#64748b", border: "1px solid #cbd5e1", borderRadius: "8px", fontWeight: "600", cursor: (actioningId ? "not-allowed" : "pointer"), transition: "all 0.2s", opacity: (actioningId ? 0.7 : 1) }}
+                >
+                  {actioningId === c._id + "_reschedule" ? "..." : "Reschedule"}
+                </button>
               </div>
             )}
           </div>
         ))}
       </div>
     </div>
-  );
+  )})();
 
   const listBlock = (
     <>

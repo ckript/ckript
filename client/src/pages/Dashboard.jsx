@@ -118,6 +118,7 @@ const CreatorDashboard = ({ user }) => {
   }, [user, isWriter, hasSilverAccess, hasGoldAccess, openPricingModal]);
 
   const [myScripts,     setMyScripts]     = useState(cached?.myScripts ?? []);
+  const [consultations, setConsultations] = useState(cached?.consultations ?? []);
   const [sharedScripts, setSharedScripts] = useState(cached?.sharedScripts ?? []);
   const [stats,         setStats]         = useState(cached?.stats ?? null);
   const [reviews,       setReviews]       = useState(cached?.reviews ?? null);
@@ -125,7 +126,8 @@ const CreatorDashboard = ({ user }) => {
   const [aiIndex,       setAiIndex]       = useState(0);
   const [platIndex,     setPlatIndex]     = useState(0);
   const [modal,         setModal]         = useState(null); // AI "View more" — the review being shown in the popup
-  const [showAllProjects, setShowAllProjects] = useState(false); // My Projects "View all" popup
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [showAllConsultations, setShowAllConsultations] = useState(false);
   const [projPage,        setProjPage]        = useState(1);     // 1-based page inside that popup
   // Skeleton only when we have nothing cached to show.
   const [loading,       setLoading]       = useState(!cached);
@@ -155,15 +157,17 @@ const CreatorDashboard = ({ user }) => {
 
   // Escape closes whichever popup is open.
   useEffect(() => {
-    if (!modal && !showAllProjects) return;
+    if (!modal && !showAllProjects && !showAllConsultations) return;
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       setModal(null);
       setShowAllProjects(false);
+        setShowAllConsultations(false);
+        setShowAllConsultations(false);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [modal, showAllProjects]);
+  }, [modal, showAllProjects, showAllConsultations]);
 
   // Persist the freshest snapshot so the next visit paints instantly. Runs on
   // any data change once we're past the skeleton, so it always writes what the
@@ -172,7 +176,7 @@ const CreatorDashboard = ({ user }) => {
   // if a power user's full project list blows the quota.
   useEffect(() => {
     if (!cacheKey || loading) return;
-    const payload = { myScripts, sharedScripts, stats, reviews };
+    const payload = { myScripts, sharedScripts, stats, reviews, consultations };
     if (!writeCache(cacheKey, payload, { prune: "dashboard:" })) {
       writeCache(
         cacheKey,
@@ -180,16 +184,17 @@ const CreatorDashboard = ({ user }) => {
         { prune: "dashboard:" }
       );
     }
-  }, [cacheKey, loading, myScripts, sharedScripts, stats, reviews]);
+  }, [cacheKey, loading, myScripts, sharedScripts, stats, reviews, consultations]);
 
   const fetchData = async () => {
     const showSkeleton = initialLoad.current;
     try {
       if (showSkeleton) setLoading(true);
-      const [scriptsRes, statsRes, reviewsRes] = await Promise.allSettled([
+      const [scriptsRes, statsRes, reviewsRes, consultationsRes] = await Promise.allSettled([
         api.get("/scripts/mine?includeCollaborations=1"),
         api.get("/dashboard"),
         api.get("/dashboard/reviews"),
+        api.get("/consultations/my"),
       ]);
       // On a failed leg, keep whatever we already have (cached/hydrated) rather
       // than blanking the section — a transient error shouldn't wipe the UI or
@@ -205,6 +210,9 @@ const CreatorDashboard = ({ user }) => {
         setStats(prev => prev ?? DEFAULT_STATS);
       }
       if (reviewsRes.status === "fulfilled") setReviews(reviewsRes.value.data);
+      if (consultationsRes && consultationsRes.status === "fulfilled") {
+        setConsultations(Array.isArray(consultationsRes.value.data) ? consultationsRes.value.data : []);
+      }
     } catch { /* keep prior/cached state on total failure */ } finally {
       initialLoad.current = false;
       if (showSkeleton) setLoading(false);
@@ -554,7 +562,82 @@ const CreatorDashboard = ({ user }) => {
         </section>
 
         {/* ── MY PROJECTS ─────────────────────────────────────────────────── */}
-        <section className="pt-6 border-t px-1" style={{ borderColor: BORDER }}>
+        {consultations && (
+          <section className="pt-6 border-t px-1 mb-10" style={{ borderColor: BORDER }}>
+            <div className="flex items-center gap-3 mb-5 flex-wrap">
+              <h2 style={{ fontFamily: DISPLAY_FONT, color: BASE }} className="text-[21px] font-medium">
+                My Consultations
+              </h2>
+              <span
+                className="text-[12px] font-bold px-2.5 py-0.5 rounded-full"
+                style={{ background: CREAM, color: "#8d877e" }}
+              >
+                {consultations.length}
+              </span>
+              <div className="flex-1" />
+              {consultations.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllConsultations(true)}
+                  className="text-[11px] font-bold tracking-[1.1px] uppercase transition-opacity hover:opacity-60"
+                  style={{ color: ACCENT, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                >
+                  View all ›
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {consultations.length === 0 && (
+                <div style={{ gridColumn: "1 / -1", padding: "40px", textAlign: "center", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>
+                  <p style={{ margin: 0, color: MUTED, fontSize: "14px", fontWeight: "500" }}>No consultations booked yet.</p>
+                </div>
+              )}
+              {consultations.slice(0, 2).map(c => (
+                <div key={c._id} className="flex flex-col box-border" style={{ padding: "20px", border: `1px solid ${BORDER}`, borderRadius: "14px", background: "white", transition: "transform 0.2s", cursor: "default" }}>
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h4 style={{ margin: 0, fontFamily: DISPLAY_FONT, fontSize: "18px", color: BASE, fontWeight: 500 }}>
+                        {c.topic}
+                      </h4>
+                      <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: MUTED }}>
+                        with {c.professional?.name || "Professional"}
+                      </p>
+                    </div>
+                    <span style={{ 
+                      padding: "4px 10px", 
+                      borderRadius: "20px", 
+                      fontSize: "10px", 
+                      fontWeight: "700", 
+                      textTransform: "uppercase", 
+                      letterSpacing: "0.5px", 
+                      background: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#ecfdf5' : (c.status === 'rejected' ? '#fef2f2' : '#f8fafc'), 
+                      color: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#059669' : (c.status === 'rejected' ? '#dc2626' : MUTED),
+                      border: `1px solid ${c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#a7f3d0' : (c.status === 'rejected' ? '#fecaca' : BORDER)}`
+                    }}>
+                      {c.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                  
+                  <div className="flex-1 mt-2" style={{ fontSize: "13px", color: MUTED, display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Date:</strong> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Amount:</strong> {c.amount / 100} {c.currency}</div>
+                    
+                    {c.googleMeetUrl && c.status !== 'rejected' && (
+                      <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                        <a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>
+                          Join Google Meet &rarr;
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+<section className="pt-6 border-t px-1" style={{ borderColor: BORDER }}>
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             <MatIcon name="projects" size={22} style={{ color: ACCENT }} />
             <h2 style={{ fontFamily: DISPLAY_FONT, color: BASE }} className="text-[21px] font-medium">
@@ -859,7 +942,8 @@ const CreatorDashboard = ({ user }) => {
       />
 
       {/* ══════════════ ALL PROJECTS MODAL (paginated) ══════════════ */}
-      <AllProjectsModal
+      <AllConsultationsModal open={showAllConsultations} consultations={consultations} onClose={() => setShowAllConsultations(false)} />
+        <AllProjectsModal
         open={showAllProjects}
         projects={myScripts}
         user={user}
@@ -1474,3 +1558,89 @@ const EmptyPanel = ({ icon, title, desc }) => (
 );
 
 export default Dashboard;
+
+
+
+const AllConsultationsModal = ({ open, consultations, onClose }) => {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="ck-review-backdrop"
+          onClick={onClose}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+          <motion.div
+            className="ck-review-modal"
+            onClick={e => e.stopPropagation()}
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: -4 }}
+            transition={{ duration: 0.22, ease: [0.22, 0.61, 0.36, 1] }}
+            style={{ width: "800px", maxWidth: "90vw", maxHeight: "85vh", display: "flex", flexDirection: "column" }}
+          >
+            <div className="ck-review-modal__header" style={{ padding: "24px 32px", borderBottom: "1px solid #f4efe6" }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="ck-review-modal__eyebrow">My Consultations</div>
+                  <h3 className="ck-review-modal__title" style={{ fontFamily: DISPLAY_FONT, color: BASE, margin: "8px 0 0" }}>All Consultations</h3>
+                </div>
+                <button type="button" className="ck-review-modal__close" onClick={onClose} aria-label="Close modal">
+                  <MatIcon name="close" size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="ck-review-modal__body" style={{ padding: "32px", overflowY: "auto", overflowX: "hidden" }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {consultations.map(c => (
+                  <div key={c._id} className="flex flex-col box-border" style={{ padding: "20px", border: `1px solid ${BORDER}`, borderRadius: "14px", background: "white", transition: "transform 0.2s", cursor: "default" }}>
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 style={{ margin: 0, fontFamily: DISPLAY_FONT, fontSize: "18px", color: BASE, fontWeight: 500 }}>
+                          {c.topic}
+                        </h4>
+                        <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: MUTED }}>
+                          with {c.professional?.name || "Professional"}
+                        </p>
+                      </div>
+                      <span style={{ 
+                        padding: "4px 10px", 
+                        borderRadius: "20px", 
+                        fontSize: "10px", 
+                        fontWeight: "700", 
+                        textTransform: "uppercase", 
+                        letterSpacing: "0.5px", 
+                        background: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#ecfdf5' : (c.status === 'rejected' ? '#fef2f2' : '#f8fafc'), 
+                        color: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#059669' : (c.status === 'rejected' ? '#dc2626' : MUTED),
+                        border: `1px solid ${c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#a7f3d0' : (c.status === 'rejected' ? '#fecaca' : BORDER)}`
+                      }}>
+                        {c.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    
+                    <div className="flex-1 mt-2" style={{ fontSize: "13px", color: MUTED, display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Date:</strong> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Amount:</strong> {c.amount / 100} {c.currency}</div>
+                      
+                      {c.googleMeetUrl && c.status !== 'rejected' && (
+                        <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                          <a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>
+                            Join Google Meet &rarr;
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
