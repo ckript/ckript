@@ -620,8 +620,17 @@ const CreatorDashboard = ({ user }) => {
                   </div>
                   
                   <div className="flex-1 mt-2" style={{ fontSize: "13px", color: MUTED, display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Date:</strong> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <strong style={{ color: BASE }}>Date:</strong> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {c.isRescheduled && (
+                          <span style={{ padding: "2px 6px", borderRadius: "10px", fontSize: "9px", fontWeight: "700", textTransform: "uppercase", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>
+                            Rescheduled
+                          </span>
+                        )}
+                      </div>
                     <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Amount:</strong> {c.amount / 100} {c.currency}</div>
+                        {c.additionalMessage && <div style={{ background: "#f8fafc", padding: "8px 10px", borderRadius: "8px", color: "#475569", fontStyle: "italic", marginTop: "4px", fontSize: "12px" }}>"{c.additionalMessage}"</div>}
+                        {c.fileLink && <div style={{ marginTop: "2px" }}><a href={c.fileLink} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#0ea5e9", fontWeight: "600", textDecoration: "none", fontSize: "12px" }}>View Attached File</a></div>}
                     
                     {c.googleMeetUrl && c.status !== 'rejected' && (
                       <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${BORDER}` }}>
@@ -1562,6 +1571,19 @@ export default Dashboard;
 
 
 const AllConsultationsModal = ({ open, consultations, onClose }) => {
+  const [filter, setFilter] = useState('All');
+  
+  const tabs = ['All', 'Awaiting', 'Accepted', 'Completed', 'Rejected'];
+  
+  const filteredConsultations = consultations.filter(c => {
+    if (filter === 'All') return true;
+    if (filter === 'Awaiting') return c.status === 'payment_pending' || c.status === 'payment_success' || c.status === 'awaiting_response';
+    if (filter === 'Accepted') return c.status === 'accepted' || c.status === 'meeting_scheduled';
+    if (filter === 'Completed') return c.status === 'meeting_completed' || c.status === 'payout_pending' || c.status === 'payout_completed';
+    if (filter === 'Rejected') return c.status === 'rejected' || c.status === 'refund_pending' || c.status === 'refunded' || c.status === 'cancelled';
+    return true;
+  });
+
   return (
     <AnimatePresence>
       {open && (
@@ -1582,8 +1604,8 @@ const AllConsultationsModal = ({ open, consultations, onClose }) => {
             transition={{ duration: 0.22, ease: [0.22, 0.61, 0.36, 1] }}
             style={{ width: "800px", maxWidth: "90vw", maxHeight: "85vh", display: "flex", flexDirection: "column" }}
           >
-            <div className="ck-review-modal__header" style={{ padding: "24px 32px", borderBottom: "1px solid #f4efe6" }}>
-              <div className="flex items-center justify-between">
+            <div className="ck-review-modal__header" style={{ padding: "24px 32px 0", borderBottom: "1px solid #f4efe6" }}>
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="ck-review-modal__eyebrow">My Consultations</div>
                   <h3 className="ck-review-modal__title" style={{ fontFamily: DISPLAY_FONT, color: BASE, margin: "8px 0 0" }}>All Consultations</h3>
@@ -1592,51 +1614,88 @@ const AllConsultationsModal = ({ open, consultations, onClose }) => {
                   <MatIcon name="close" size={24} />
                 </button>
               </div>
-            </div>
-
-            <div className="ck-review-modal__body" style={{ padding: "32px", overflowY: "auto", overflowX: "hidden" }}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {consultations.map(c => (
-                  <div key={c._id} className="flex flex-col box-border" style={{ padding: "20px", border: `1px solid ${BORDER}`, borderRadius: "14px", background: "white", transition: "transform 0.2s", cursor: "default" }}>
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h4 style={{ margin: 0, fontFamily: DISPLAY_FONT, fontSize: "18px", color: BASE, fontWeight: 500 }}>
-                          {c.topic}
-                        </h4>
-                        <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: MUTED }}>
-                          with {c.professional?.name || "Professional"}
-                        </p>
-                      </div>
-                      <span style={{ 
-                        padding: "4px 10px", 
-                        borderRadius: "20px", 
-                        fontSize: "10px", 
-                        fontWeight: "700", 
-                        textTransform: "uppercase", 
-                        letterSpacing: "0.5px", 
-                        background: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#ecfdf5' : (c.status === 'rejected' ? '#fef2f2' : '#f8fafc'), 
-                        color: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#059669' : (c.status === 'rejected' ? '#dc2626' : MUTED),
-                        border: `1px solid ${c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#a7f3d0' : (c.status === 'rejected' ? '#fecaca' : BORDER)}`
-                      }}>
-                        {c.status.replace('_', ' ')}
-                      </span>
-                    </div>
-                    
-                    <div className="flex-1 mt-2" style={{ fontSize: "13px", color: MUTED, display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Date:</strong> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Amount:</strong> {c.amount / 100} {c.currency}</div>
-                      
-                      {c.googleMeetUrl && c.status !== 'rejected' && (
-                        <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-                          <a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>
-                            Join Google Meet &rarr;
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+              
+              <div className="flex gap-6 mt-4 overflow-x-auto" style={{ borderBottom: "none" }}>
+                {tabs.map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setFilter(t)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: filter === t ? `2px solid ${BASE}` : "2px solid transparent",
+                      padding: "0 4px 12px",
+                      color: filter === t ? BASE : MUTED,
+                      fontWeight: filter === t ? "600" : "500",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {t}
+                  </button>
                 ))}
               </div>
+            </div>
+
+            <div className="ck-review-modal__body ck-scroll-main" style={{ padding: "32px", overflowY: "auto", overflowX: "hidden", flex: 1 }}>
+              {filteredConsultations.length === 0 ? (
+                <div style={{ padding: "60px 40px", textAlign: "center", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>
+                  <p style={{ margin: 0, color: MUTED, fontSize: "15px", fontWeight: "500" }}>No {filter.toLowerCase()} consultations found.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredConsultations.map(c => (
+                    <div key={c._id} className="flex flex-col box-border" style={{ padding: "20px", border: `1px solid ${BORDER}`, borderRadius: "14px", background: "white", transition: "transform 0.2s", cursor: "default" }}>
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h4 style={{ margin: 0, fontFamily: DISPLAY_FONT, fontSize: "18px", color: BASE, fontWeight: 500 }}>
+                            {c.topic}
+                          </h4>
+                          <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: MUTED }}>
+                            with {c.professional?.name || "Professional"}
+                          </p>
+                        </div>
+                        <span style={{ 
+                          padding: "4px 10px", 
+                          borderRadius: "20px", 
+                          fontSize: "10px", 
+                          fontWeight: "700", 
+                          textTransform: "uppercase", 
+                          letterSpacing: "0.5px", 
+                          background: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#ecfdf5' : (c.status === 'rejected' ? '#fef2f2' : '#f8fafc'), 
+                          color: c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#059669' : (c.status === 'rejected' ? '#dc2626' : MUTED),
+                          border: `1px solid ${c.status === 'accepted' || c.status === 'meeting_scheduled' ? '#a7f3d0' : (c.status === 'rejected' ? '#fecaca' : BORDER)}`
+                        }}>
+                          {c.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      
+                      <div className="flex-1 mt-2" style={{ fontSize: "13px", color: MUTED, display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <strong style={{ color: BASE }}>Date:</strong> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {c.isRescheduled && (
+                            <span style={{ padding: "2px 6px", borderRadius: "10px", fontSize: "9px", fontWeight: "700", textTransform: "uppercase", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>
+                              Rescheduled
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2"><strong style={{ color: BASE }}>Amount:</strong> {c.amount / 100} {c.currency}</div>
+                        {c.additionalMessage && <div style={{ background: "#f8fafc", padding: "8px 10px", borderRadius: "8px", color: "#475569", fontStyle: "italic", marginTop: "4px", fontSize: "12px" }}>"{c.additionalMessage}"</div>}
+                        {c.fileLink && <div style={{ marginTop: "2px" }}><a href={c.fileLink} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#0ea5e9", fontWeight: "600", textDecoration: "none", fontSize: "12px" }}>View Attached File</a></div>}
+                        
+                        {c.googleMeetUrl && c.status !== 'rejected' && (
+                          <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                            <a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>
+                              Join Google Meet &rarr;
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </motion.div>
         </motion.div>

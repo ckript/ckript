@@ -33,7 +33,7 @@ const getRazorpayInstance = async () => {
 export const createOrder = async (req, res) => {
   try {
     const writerId = req.user._id;
-    const { professionalId, date, time, topic, additionalMessage, duration } = req.body;
+    const { professionalId, date, time, topic, additionalMessage, fileLink, duration } = req.body;
 
     const writer = await User.findById(writerId);
     if (!writer || (writer.role !== "writer" && writer.role !== "creator")) {
@@ -88,6 +88,7 @@ export const createOrder = async (req, res) => {
       timezone: availability ? availability.timezone : "Asia/Kolkata",
       topic: topic || "Pitch Script",
       additionalMessage,
+      fileLink,
       status: "awaiting_response",
       paidAt: new Date(),
       
@@ -104,6 +105,9 @@ export const createOrder = async (req, res) => {
         time: consultation.scheduledStart.toLocaleTimeString(),
         amount: consultation.amount / 100,
         currency: consultation.currency,
+          additionalMessage: consultation.additionalMessage,
+      fileLink,
+          fileLink: consultation.fileLink,
         });
     }
 
@@ -113,6 +117,9 @@ export const createOrder = async (req, res) => {
         producerName: professional.name,
         amount: consultation.amount / 100,
         currency: consultation.currency,
+          additionalMessage: consultation.additionalMessage,
+      fileLink,
+          fileLink: consultation.fileLink,
         date: consultation.scheduledStart.toLocaleDateString(),
         time: consultation.scheduledStart.toLocaleTimeString(),
         });
@@ -182,6 +189,9 @@ export const verifyPayment = async (req, res) => {
         time: consultation.scheduledStart.toLocaleTimeString(),
         amount: consultation.amount / 100, // format from paise
         currency: consultation.currency,
+          additionalMessage: consultation.additionalMessage,
+      fileLink,
+          fileLink: consultation.fileLink,
         });
     }
     
@@ -191,6 +201,9 @@ export const verifyPayment = async (req, res) => {
         producerName: professional ? professional.name : "Producer",
         amount: consultation.amount / 100,
         currency: consultation.currency,
+          additionalMessage: consultation.additionalMessage,
+      fileLink,
+          fileLink: consultation.fileLink,
         date: consultation.scheduledStart.toLocaleDateString(),
         time: consultation.scheduledStart.toLocaleTimeString(),
         });
@@ -286,6 +299,7 @@ export const acceptConsultation = async (req, res) => {
     consultation.googleEventId = googleEventId;
     consultation.status = "accepted";
     consultation.acceptedAt = new Date();
+      consultation.isRescheduled = true;
     await consultation.save();
 
     // Send acceptance emails to both Writer and Producer

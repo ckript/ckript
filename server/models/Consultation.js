@@ -15,6 +15,7 @@ const consultationSchema = new mongoose.Schema({
   timezone: { type: String, required: true },
   topic: { type: String, required: true },
   additionalMessage: { type: String },
+  fileLink: { type: String },
   status: {
     type: String,
     enum: [
@@ -41,6 +42,7 @@ const consultationSchema = new mongoose.Schema({
     index: true
   },
   rejectionReason: { type: String },
+  isRescheduled: { type: Boolean, default: false },
   googleEventId: { type: String },
   googleMeetUrl: { type: String },
   

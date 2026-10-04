@@ -581,7 +581,8 @@ const Profile = () => {
         time: pitchData.time,
         duration: pitchData.duration,
         currency: pitchData.currency || "INR",
-        topic: "Book Consultation",
+        topic: pitchData.topic || "Book Consultation",
+        fileLink: pitchData.fileLink || undefined,
         additionalMessage: pitchData.note
       });
       setPitchSuccess(true);
@@ -3280,7 +3281,7 @@ const Profile = () => {
           <Motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
+            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border max-h-[90vh] overflow-y-auto ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
             onClick={(e) => e.stopPropagation()}
           >
             {pitchSuccess ? (
@@ -3317,24 +3318,21 @@ const Profile = () => {
                 <div className="space-y-4 mb-6">
                   <div>
                     <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
-                      Select Script
+                      Topic
                     </label>
-                    <select
-                      value={pitchData.scriptId}
-                      onChange={(e) => setPitchData({ ...pitchData, scriptId: e.target.value })}
+                    <input
+                      type="text"
+                      value={pitchData.topic || ""}
+                      onChange={(e) => setPitchData({ ...pitchData, topic: e.target.value })}
+                      placeholder="e.g. Script Review, General Guidance"
                       className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${
                         dark 
                           ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20" 
                           : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
                       }`}
-                    >
-                      <option value="">-- Choose a script --</option>
-                      {myScripts.filter(s => s.status !== "draft").map(script => (
-                        <option key={script._id} value={script._id}>{script.title}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
-                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
                         Currency
@@ -3372,7 +3370,7 @@ const Profile = () => {
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
                         Preferred Date
@@ -3408,7 +3406,7 @@ const Profile = () => {
 
                   <div>
                     <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
-                      What would you like to discuss? (Optional)
+                      anything you want that i can prepare or go through it before meet (Optional)
                     </label>
                     <textarea
                       value={pitchData.note}
@@ -3418,6 +3416,22 @@ const Profile = () => {
                         dark 
                           ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20 placeholder-white/20" 
                           : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324] placeholder-gray-400"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
+                      Attach a file or PDF link (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={pitchData.fileLink || ""}
+                      onChange={(e) => setPitchData({ ...pitchData, fileLink: e.target.value })}
+                      placeholder="Paste a Google Drive or Dropbox link here..."
+                      className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${
+                        dark 
+                          ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20" 
+                          : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
                       }`}
                     />
                   </div>
@@ -3457,7 +3471,7 @@ const Profile = () => {
           <Motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
+            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border max-h-[90vh] overflow-y-auto ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
             onClick={(e) => e.stopPropagation()}
           >
             {requestSuccess ? (

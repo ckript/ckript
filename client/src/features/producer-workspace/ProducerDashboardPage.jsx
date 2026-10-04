@@ -857,8 +857,16 @@ const ProducerDashboardPage = () => {
             
             <div style={{ fontSize: "13px", color: "var(--ck-muted)", flexGrow: 1, display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Amount:</span> {c.amount / 100} {c.currency}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Date:</span> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                              <span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Date:</span> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {c.isRescheduled && (
+                                <span style={{ padding: "2px 6px", borderRadius: "10px", fontSize: "9px", fontWeight: "700", textTransform: "uppercase", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a", marginLeft: "4px" }}>
+                                  Rescheduled
+                                </span>
+                              )}
+                            </div>
               {c.additionalMessage && <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", color: "#475569", fontStyle: "italic", marginTop: "4px" }}>"{c.additionalMessage}"</div>}
+              {c.fileLink && <div style={{ marginTop: "4px" }}><a href={c.fileLink} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#0ea5e9", fontWeight: "600", textDecoration: "none" }}><MatIcon name="attachment" size={14} /> View Attached File</a></div>}
               {c.googleMeetUrl && <div style={{ marginTop: "4px" }}><a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>Join Google Meet &rarr;</a></div>}
             </div>
             
