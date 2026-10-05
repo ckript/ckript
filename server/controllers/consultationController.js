@@ -40,6 +40,10 @@ export const createOrder = async (req, res) => {
       return res.status(403).json({ message: "Only writers can book consultations." });
     }
 
+    if (typeof professionalId !== "string" || !mongoose.Types.ObjectId.isValid(professionalId)) {
+      return res.status(400).json({ message: "Invalid professional ID." });
+    }
+
     const professional = await User.findById(professionalId);
     if (!professional) return res.status(404).json({ message: "Professional not found." });
 
