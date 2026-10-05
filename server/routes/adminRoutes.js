@@ -96,6 +96,13 @@ import {
     adminSetEntryAssignments,
     adminSetFinalScore,
 } from "../controllers/competitionJudgingAdminController.js";
+import {
+    adminListConsultations,
+    adminGetConsultationDetails,
+    adminGetPendingPayouts,
+    adminProcessPayout,
+    adminGetRefunds,
+} from "../controllers/consultationController.js";
 
 const router = express.Router();
 
@@ -239,5 +246,12 @@ router.put("/competitions/:id/entries/:entryId/final-score", adminSetFinalScore)
 
 // Contact Queries
 router.get("/queries", getContactSubmissions);
+
+// Consultations
+router.get("/consultations", adminListConsultations);
+router.get("/consultations/payouts", adminGetPendingPayouts);
+router.get("/consultations/refunds", adminGetRefunds);
+router.get("/consultations/:id", adminGetConsultationDetails);
+router.post("/consultations/:id/payout", adminProcessPayout);
 
 export default router;

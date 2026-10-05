@@ -77,6 +77,7 @@ import MeetingsSection from "./admin/sections/MeetingsSection";
 import QueriesSection from "./admin/sections/QueriesSection";
 import AnalyticsSection from "./admin/sections/AnalyticsSection";
 import DiscountCodesSection from "./admin/sections/DiscountCodesSection";
+import ConsultationsSection from "./admin/sections/ConsultationsSection";
 
 // Re-exported for AdminCompetitions, AdminReferrals and the competitions editor, which import
 // the shared admin API client from this module — and for the tests that mock this module path.
@@ -2146,6 +2147,9 @@ const AdminDashboard = () => {
 
             case "meetings":
                 return <MeetingsSection />;
+                
+            case "consultations":
+                return <ConsultationsSection dark={isDark} />;
 
             case "messages":
                 return <MessagesSection />;

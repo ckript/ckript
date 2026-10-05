@@ -187,8 +187,8 @@ export function ProfileWorkspaceIdentity({
             </button>
           )}
           {!isOwnProfile && onPitch && (
-            <button type="button" className="profile-workspace-btn profile-workspace-btn--primary" onClick={onPitch} disabled={isBlockedByCurrent || blockedByProfile}>
-              Pitch script
+            <button type="button" style={{ color: "white" }} className="profile-workspace-btn profile-workspace-btn--primary" onClick={onPitch} disabled={isBlockedByCurrent || blockedByProfile}>
+              Book Consultation
             </button>
           )}
           <SocialShareButton share={profileShare} buttonLabel="Share" className="profile-workspace-btn" />

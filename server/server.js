@@ -50,6 +50,8 @@ import collabRoutes from "./routes/collab.routes.js";
 import competitionRoutes from "./routes/competitionRoutes.js";
 import meetingRoutes from "./routes/meetingRoutes.js";
 import googleCalendarRoutes from "./routes/googleCalendarRoutes.js";
+import consultationRoutes from "./routes/consultationRoutes.js";
+import availabilityRoutes from "./routes/availabilityRoutes.js";
 import { getCalendarConfigWarning } from "./utils/googleCalendar.js";
 import { registerCollabSocket } from "./socket/collab.socket.js";
 import { registerScenePresence } from "./socket/scenePresence.socket.js";
@@ -393,6 +395,8 @@ app.use("/api/collab", collabRoutes);
 app.use("/api/competitions", competitionRoutes);
 app.use("/api/meetings", meetingRoutes);
 app.use("/api/google-calendar", googleCalendarRoutes);
+app.use("/api/consultations", consultationRoutes);
+app.use("/api/availability", availabilityRoutes);
 
 export default app;
 
@@ -427,3 +431,15 @@ if (!isVercel) {
 
 // Trigger nodemon restart
 
+
+// triggered restart
+
+// bypassed gcal
+
+// bypassed gcal 2
+
+// updated emails
+
+// added reschedule endpoint
+
+// added reschedule prof email
