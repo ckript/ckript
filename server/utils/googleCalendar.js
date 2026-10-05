@@ -195,6 +195,20 @@ export const createMeetingEvent = async ({
   return { eventId: data?.id || "", meetLink };
 };
 
+// Best-effort delete of an event on the organizer's primary calendar (used when a meeting is replaced
+// on reschedule). sendUpdates=all tells attendees the old slot is cancelled.
+export const deleteMeetingEvent = async ({ accessToken, eventId }) => {
+  if (!accessToken || !eventId) return;
+  try {
+    await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+  } catch {
+    /* best effort */
+  }
+};
+
 // Best-effort revoke at Google (used on disconnect).
 export const revokeToken = async (token) => {
   if (!token) return;

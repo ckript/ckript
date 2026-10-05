@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import { encryptToken, decryptToken } from "../utils/tokenCrypto.js";
+import { encryptToken, decryptToken, isTokenCryptoConfigured } from "../utils/tokenCrypto.js";
 import {
   getAuthUrl,
   exchangeCode,
@@ -41,6 +41,12 @@ export const getGoogleCalendarAuthUrl = async (req, res) => {
   try {
     if (!isGoogleCalendarConfigured()) {
       return res.status(503).json({ message: "Google Calendar is not configured on the server." });
+    }
+    // The refresh token is encrypted on the way back from Google. Without a valid key that step throws
+    // AFTER consent, so the producer clicks through Google and silently ends up not connected.
+    if (!isTokenCryptoConfigured()) {
+      console.error("[googleCalendar] TOKEN_ENC_KEY is missing or not 64 hex characters - cannot store calendar tokens");
+      return res.status(503).json({ message: "Google Calendar is not configured on the server (token encryption key)." });
     }
     const returnTo = sanitizeReturnTo(req.body?.returnTo);
     const state = jwt.sign({ uid: String(req.user._id), returnTo, purpose: "gcal" }, process.env.JWT_SECRET, {

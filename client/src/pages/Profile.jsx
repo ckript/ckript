@@ -2,6 +2,8 @@ import { useDeferredValue, useEffect, useState, useContext, useRef, useCallback 
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion as Motion } from "framer-motion";
 import api from "../services/api";
+import { razorpayKeyFromOrder } from "../utils/razorpayKey";
+import { loadRazorpaySdk } from "../utils/loadRazorpaySdk";
 import { AuthContext } from "../context/AuthContext";
 import { useAuthModal } from "../context/AuthModalContext";
 import { useDarkMode } from "../context/DarkModeContext";
@@ -575,7 +577,16 @@ const Profile = () => {
   const handleDirectBooking = async () => {
     try {
       setSendingPitch(true);
-      await api.post("/consultations", {
+      const showBookedAndReset = () => {
+        setPitchSuccess(true);
+        setTimeout(() => {
+          setShowPitchModal(false);
+          setPitchSuccess(false);
+          setPitchData({ scriptId: "", note: "", duration: "", date: "", time: "", currency: "INR" });
+        }, 2000);
+      };
+
+      const { data: order } = await api.post("/consultations", {
         professionalId: profile._id,
         date: pitchData.date,
         time: pitchData.time,
@@ -585,16 +596,61 @@ const Profile = () => {
         fileLink: pitchData.fileLink || undefined,
         additionalMessage: pitchData.note
       });
-      setPitchSuccess(true);
-      setTimeout(() => {
-        setShowPitchModal(false);
-        setPitchSuccess(false);
-        setPitchData({ scriptId: "", note: "", duration: "", date: "", time: "", currency: "INR" });
-      }, 2000);
-      setSendingPitch(false);
+
+      // Payments are switched off on the server (CONSULTATION_PAYMENTS_ENABLED) - booking is already confirmed.
+      if (!order.paymentRequired) {
+        showBookedAndReset();
+        setSendingPitch(false);
+        return;
+      }
+
+      const sdkReady = await loadRazorpaySdk();
+      if (!sdkReady) {
+        throw new Error("Payment SDK failed to load. Disable ad blocker/privacy extension for checkout.razorpay.com and try again.");
+      }
+
+      if (order.fellBackToINR) {
+        alert("International payments are unavailable right now, so this consultation will be charged in INR.");
+      }
+
+      const checkout = new window.Razorpay({
+        key: razorpayKeyFromOrder(order),
+        amount: order.amount,
+        currency: order.currency,
+        name: "Ckript Consultations",
+        description: `Consultation with ${profile.name}`,
+        order_id: order.orderId,
+        prefill: {
+          name: currentUser?.name || "",
+          email: currentUser?.email || "",
+        },
+        theme: { color: "#8a3324" },
+        handler: async (response) => {
+          try {
+            await api.post(`/consultations/${order.consultationId}/payment/verify`, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            showBookedAndReset();
+          } catch (verifyErr) {
+            console.error("Consultation payment verification error:", verifyErr);
+            alert(verifyErr.response?.data?.message || "Payment verification failed. If money was deducted, it will be refunded.");
+          } finally {
+            setSendingPitch(false);
+          }
+        },
+        modal: {
+          ondismiss: () => setSendingPitch(false),
+        },
+      });
+      checkout.on("payment.failed", (response) => {
+        alert(response?.error?.description || "Payment failed. Please try again.");
+      });
+      checkout.open();
     } catch (err) {
       console.error("Booking Error:", err);
-      alert(err.response?.data?.message || "Failed to book consultation.");
+      alert(err.response?.data?.message || err.message || "Failed to book consultation.");
       setSendingPitch(false);
     }
   };
@@ -3437,6 +3493,19 @@ const Profile = () => {
                   </div>
                 </div>
 
+                {pitchData.duration && (
+                  <div className={`mb-4 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[12.5px] leading-relaxed ${
+                    dark ? "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  }`}>
+                    <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                    </svg>
+                    <span>
+                      <strong>100% refund guarantee:</strong> if {profile.name || "the professional"} rejects your consultation request, your full payment will be refunded to your original payment method.
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowPitchModal(false)}
@@ -3453,7 +3522,7 @@ const Profile = () => {
                       dark ? "bg-[#a04030] text-white hover:bg-[#8a3324]" : "bg-[#8a3324] text-white hover:bg-[#6a2519] shadow-md"
                     }`}
                   >
-                    {sendingPitch ? "Sending..." : "Book Consultation"}
+                    {sendingPitch ? "Processing..." : pitchData.duration ? "Pay & Book Consultation" : "Book Consultation"}
                   </button>
                 </div>
               </>

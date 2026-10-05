@@ -114,3 +114,32 @@ export const onCalendarPopupResult = (onResult) => {
 
   return () => handlers.forEach((off) => off());
 };
+
+/* What actually went wrong, in the producer's words.
+   Every failure used to read "Google could not complete the connection", which is true of all of
+   them and useful for none — it cost several rounds of guessing to find out which one was firing. */
+export const describeCalendarFailure = (reason) => {
+  switch (reason) {
+    case "denied":
+      return "Google refused the connection. If this account is not on the app's Google test-user list, ask an admin to add it — an unverified app blocks everyone else.";
+    case "no_refresh_token":
+      return "Google did not return a reusable connection, which happens when this account already granted access. Remove Ckript at myaccount.google.com/permissions, then connect again.";
+    case "bad_client_secret":
+      return "The server's Google client secret was rejected. GOOGLE_OAUTH_CLIENT_SECRET does not belong to the configured client ID — an admin needs to copy the current secret from the Google Cloud Console.";
+    case "redirect_uri_mismatch":
+      return "Google rejected the callback URL. The redirect URI registered in the Google Cloud Console does not match the server's — check them character for character.";
+    case "stale_code":
+      return "That sign-in had already been used. Please connect again.";
+    case "exchange_failed":
+      return "Google rejected the connection and did not say why. The server log has the detail.";
+    case "bad_state":
+      return "That took too long and the request expired. Please try connecting again.";
+    case "no_code":
+    case "no_state":
+      return "Google sent an incomplete response. Please try connecting again.";
+    case "server_error":
+      return "The server could not finish the connection. The server log has the detail.";
+    default:
+      return "Google could not complete the connection. Please try again.";
+  }
+};

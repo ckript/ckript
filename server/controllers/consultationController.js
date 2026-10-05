@@ -6,7 +6,7 @@ import Availability from "../models/Availability.js";
 import { resolveCurrency } from "../utils/currencyFx.js";
 import { createOrderWithUsdFallback } from "../utils/razorpayOrder.js";
 import { verifyRazorpaySignature } from "../utils/razorpaySignature.js";
-import { getAccessTokenFromRefresh, createMeetingEvent, ReconnectRequired } from "../utils/googleCalendar.js";
+import { getAccessTokenFromRefresh, createMeetingEvent, deleteMeetingEvent, ReconnectRequired } from "../utils/googleCalendar.js";
 import { decryptToken } from "../utils/tokenCrypto.js";
 // Assume these email methods exist or we will add them later
 import { 
@@ -30,6 +30,91 @@ const getRazorpayInstance = async () => {
   }
 };
 
+// Create the Google Calendar event (with a real Meet link) on the professional's calendar. Google emails
+// both attendees the invite. Never falls back to a made-up link: returns { error: { status, body } } so
+// the caller can tell the professional to connect/reconnect their calendar instead. `professional` must
+// be loaded with "+googleCalendar.refreshTokenEnc".
+const createConsultationMeeting = async ({ consultation, professional, start, end, replaceEventId }) => {
+  if (!professional?.googleCalendar?.connected || !professional?.googleCalendar?.refreshTokenEnc) {
+    return {
+      error: {
+        status: 428,
+        body: { message: "Connect your Google Calendar to generate the Google Meet link.", needsCalendar: true },
+      },
+    };
+  }
+
+  try {
+    const refreshToken = decryptToken(professional.googleCalendar.refreshTokenEnc);
+    const { accessToken } = await getAccessTokenFromRefresh(refreshToken);
+    const event = await createMeetingEvent({
+      accessToken,
+      summary: `Ckript Consultation: ${consultation.writer.name} & ${professional.name}`,
+      description: `Topic: ${consultation.topic}\n\n${consultation.additionalMessage || ""}`,
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+      timeZone: consultation.timezone,
+      attendees: [professional.email, consultation.writer.email],
+    });
+    if (!event.meetLink) throw new Error("Google did not return a Meet link for the event.");
+
+    if (replaceEventId && replaceEventId !== event.eventId) {
+      await deleteMeetingEvent({ accessToken, eventId: replaceEventId });
+    }
+    return { meetingLink: event.meetLink, googleEventId: event.eventId };
+  } catch (err) {
+    if (err instanceof ReconnectRequired) {
+      // Stored token is dead - flip the flag so the UI re-prompts to connect.
+      await User.updateOne({ _id: professional._id }, { $set: { "googleCalendar.connected": false } });
+      return {
+        error: {
+          status: 428,
+          body: { message: "Your Google Calendar connection expired. Please reconnect and try again.", needsCalendar: true },
+        },
+      };
+    }
+    console.error("Consultation Google Meet creation failed:", err?.message || err);
+    return { error: { status: 502, body: { message: "Failed to create the Google Meet link. Please try again." } } };
+  }
+};
+
+// Razorpay checkout for consultations is OFF unless CONSULTATION_PAYMENTS_ENABLED=true. While off,
+// a booking is confirmed immediately (no charge) so the flow can be tested end to end.
+const consultationPaymentsEnabled = () => String(process.env.CONSULTATION_PAYMENTS_ENABLED || "").toLowerCase() === "true";
+
+// Booking-confirmed emails to the professional and the writer. Never throws: the booking is already
+// saved by the time these go out, so an email failure must not fail the request.
+const sendBookingConfirmedEmails = async (consultation, writer, professional) => {
+  try {
+    if (professional) {
+      await sendConsultationBookedEmail(professional.email, {
+        professionalName: professional.name,
+        writerName: writer.name,
+        topic: consultation.topic,
+        date: consultation.scheduledStart.toLocaleDateString(),
+        time: consultation.scheduledStart.toLocaleTimeString(),
+        amount: consultation.amount / 100, // format from paise
+        currency: consultation.currency,
+        additionalMessage: consultation.additionalMessage,
+        fileLink: consultation.fileLink,
+      });
+    }
+
+    await sendConsultationPaidWriterEmail(writer.email, {
+      writerName: writer.name,
+      producerName: professional ? professional.name : "Producer",
+      amount: consultation.amount / 100,
+      currency: consultation.currency,
+      additionalMessage: consultation.additionalMessage,
+      fileLink: consultation.fileLink,
+      date: consultation.scheduledStart.toLocaleDateString(),
+      time: consultation.scheduledStart.toLocaleTimeString(),
+    });
+  } catch (emailErr) {
+    console.error("Consultation booking email failed:", emailErr);
+  }
+};
+
 export const createOrder = async (req, res) => {
   try {
     const writerId = req.user._id;
@@ -47,8 +132,15 @@ export const createOrder = async (req, res) => {
     const professional = await User.findById(professionalId);
     if (!professional) return res.status(404).json({ message: "Professional not found." });
 
+    const paymentsEnabled = consultationPaymentsEnabled();
+    const razorpay = paymentsEnabled ? await getRazorpayInstance() : null;
+    if (paymentsEnabled && !razorpay) {
+      return res.status(503).json({ message: "Razorpay is not configured. Keys are missing." });
+    }
+
     let amount = 0;
-    let selectedCurrency = req.body.currency || "INR";
+    let inrAmount = null;
+    let selectedCurrency = resolveCurrency(req.body.currency, writer.preferredCurrency);
     let currency = selectedCurrency;
     let durationMins = duration ? Number(duration) : 30;
 
@@ -59,31 +151,74 @@ export const createOrder = async (req, res) => {
       if (!duration) durationMins = availability.duration;
     } else if (duration) {
       // Dynamic pricing based on duration and selected currency
+      inrAmount = durationMins === 60 ? 1500000 : 800000; // 15000 or 8000 INR in paise
       if (selectedCurrency === "USD") {
         amount = durationMins === 60 ? 1600 : 900; // $16 or $9 in cents
       } else {
-        amount = durationMins === 60 ? 1500000 : 800000; // 15000 or 8000 INR in paise
+        amount = inrAmount;
       }
     } else {
       return res.status(400).json({ message: "Professional is not accepting consultations and no duration was provided." });
     }
-
-    const platformFee = Math.round(amount * 0.10);
-    const professionalAmount = amount - platformFee;
 
     const [hours, minutes] = (time || "00:00").split(':');
     const scheduledStart = new Date(date || Date.now());
     scheduledStart.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
     const scheduledEnd = new Date(scheduledStart.getTime() + durationMins * 60000);
 
-    
+    if (!paymentsEnabled) {
+      const platformFee = Math.round(amount * 0.10);
+      const consultation = new Consultation({
+        writer: writerId,
+        professional: professionalId,
+        professionalRole: professional.role,
+        amount,
+        currency,
+        platformFee,
+        professionalAmount: amount - platformFee,
+        duration: durationMins,
+        scheduledStart,
+        scheduledEnd,
+        timezone: availability ? availability.timezone : "Asia/Kolkata",
+        topic: topic || "Pitch Script",
+        additionalMessage,
+        fileLink,
+        status: "awaiting_response",
+        paidAt: new Date(),
+      });
+      await consultation.save();
+      await sendBookingConfirmedEmails(consultation, writer, professional);
+
+      return res.status(200).json({
+        message: "Consultation booked successfully",
+        paymentRequired: false,
+        consultationId: consultation._id,
+      });
+    }
+
+    const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
+      amount,
+      currency,
+      inrAmount,
+      receipt: `cons_${writerId.toString().substring(18)}_${Date.now()}`,
+      notes: {
+        type: "consultation",
+        writerId: writerId.toString(),
+        professionalId: professionalId.toString(),
+      },
+    });
+    if (!order) return res.status(500).json({ message: "Failed to create Razorpay order" });
+
+    // Fees are derived from what Razorpay will actually charge (a USD order may fall back to INR).
+    const platformFee = Math.round(order.amount * 0.10);
+    const professionalAmount = order.amount - platformFee;
 
     const consultation = new Consultation({
       writer: writerId,
       professional: professionalId,
       professionalRole: professional.role,
-      amount,
-      currency,
+      amount: order.amount,
+      currency: order.currency,
       platformFee,
       professionalAmount,
       duration: durationMins,
@@ -93,49 +228,24 @@ export const createOrder = async (req, res) => {
       topic: topic || "Pitch Script",
       additionalMessage,
       fileLink,
-      status: "awaiting_response",
-      paidAt: new Date(),
-      
+      status: "payment_pending",
+      razorpayOrderId: order.id,
     });
 
     await consultation.save();
 
-    if (professional) {
-      await sendConsultationBookedEmail(professional.email, {
-        professionalName: professional.name,
-        writerName: writer.name,
-        topic: consultation.topic,
-        date: consultation.scheduledStart.toLocaleDateString(),
-        time: consultation.scheduledStart.toLocaleTimeString(),
-        amount: consultation.amount / 100,
-        currency: consultation.currency,
-          additionalMessage: consultation.additionalMessage,
-      fileLink,
-          fileLink: consultation.fileLink,
-        });
-    }
-
-    if (writer) {
-      await sendConsultationPaidWriterEmail(writer.email, {
-        writerName: writer.name,
-        producerName: professional.name,
-        amount: consultation.amount / 100,
-        currency: consultation.currency,
-          additionalMessage: consultation.additionalMessage,
-      fileLink,
-          fileLink: consultation.fileLink,
-        date: consultation.scheduledStart.toLocaleDateString(),
-        time: consultation.scheduledStart.toLocaleTimeString(),
-        });
-    }
-
     return res.status(200).json({
-      message: "Consultation booked successfully",
-      consultationId: consultation._id
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      key: process.env.RAZORPAY_KEY_ID,
+      paymentRequired: true,
+      fellBackToINR,
+      consultationId: consultation._id,
     });
   } catch (error) {
     console.error("Create Consultation Order Error:", error);
-    return res.status(500).json({ message: "Failed: " + error.message });
+    return res.status(500).json({ message: error.message || error.description || "Failed to create order" });
   }
 };
 
@@ -147,71 +257,40 @@ export const verifyPayment = async (req, res) => {
     const consultation = await Consultation.findById(id).populate("writer");
     if (!consultation) return res.status(404).json({ message: "Consultation not found." });
 
+    if (!consultation.writer || consultation.writer._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized to verify this payment." });
+    }
+
+    // Already verified (e.g. a retried request) - don't re-send emails or create a second meeting.
+    if (consultation.status !== "payment_pending" && consultation.status !== "payment_failed") {
+      if (consultation.razorpayPaymentId && consultation.razorpayPaymentId === razorpay_payment_id) {
+        return res.status(200).json({ message: "Payment already verified.", consultation });
+      }
+      return res.status(400).json({ message: "This consultation is not awaiting payment." });
+    }
+
+    if (!consultation.razorpayOrderId || razorpay_order_id !== consultation.razorpayOrderId) {
+      return res.status(400).json({ message: "Payment verification failed: Order mismatch" });
+    }
+
     if (!verifyRazorpaySignature({
-      orderId: razorpay_order_id,
+      orderId: consultation.razorpayOrderId,
       paymentId: razorpay_payment_id,
       signature: razorpay_signature,
     })) {
+      consultation.status = "payment_failed";
+      await consultation.save();
       return res.status(400).json({ message: "Payment verification failed: Invalid signature" });
     }
 
     consultation.status = "awaiting_response";
-    consultation.razorpayPaymentId = razorpay_payment_id;
+    consultation.razorpayPaymentId = String(razorpay_payment_id);
     consultation.paidAt = new Date();
-    
-    // Generate dummy/fallback meet link if google calendar fails or is not connected
-    let meetLink = "https://meet.google.com/" + Math.random().toString(36).substring(2, 12);
-    
-    const professional = await User.findById(consultation.professional);
-    
-    if (professional && professional.googleCalendar && professional.googleCalendar.connected) {
-        try {
-            const { accessToken } = await getAccessTokenFromRefresh(decryptToken(professional.googleCalendar.refreshTokenEnc));
-            const meetRes = await createMeetingEvent({
-                accessToken,
-                summary: `Consultation: ${consultation.topic}`,
-                startISO: consultation.scheduledStart.toISOString(),
-                endISO: consultation.scheduledEnd.toISOString(),
-                timeZone: consultation.timezone,
-                attendees: [consultation.writer.email, professional.email]
-            });
-            if (meetRes.meetLink) meetLink = meetRes.meetLink;
-        } catch (e) {
-            console.error("Google Meet creation failed, using fallback:", e);
-        }
-    }
-    
-    consultation.googleMeetUrl = meetLink;
+    // The Google Meet link is created when the professional accepts (acceptConsultation), not here.
     await consultation.save();
 
-    if (professional) {
-      await sendConsultationBookedEmail(professional.email, {
-        professionalName: professional.name,
-        writerName: consultation.writer.name,
-        topic: consultation.topic,
-        date: consultation.scheduledStart.toLocaleDateString(),
-        time: consultation.scheduledStart.toLocaleTimeString(),
-        amount: consultation.amount / 100, // format from paise
-        currency: consultation.currency,
-          additionalMessage: consultation.additionalMessage,
-      fileLink,
-          fileLink: consultation.fileLink,
-        });
-    }
-    
-    if (consultation.writer) {
-      await sendConsultationPaidWriterEmail(consultation.writer.email, {
-        writerName: consultation.writer.name,
-        producerName: professional ? professional.name : "Producer",
-        amount: consultation.amount / 100,
-        currency: consultation.currency,
-          additionalMessage: consultation.additionalMessage,
-      fileLink,
-          fileLink: consultation.fileLink,
-        date: consultation.scheduledStart.toLocaleDateString(),
-        time: consultation.scheduledStart.toLocaleTimeString(),
-        });
-    }
+    const professional = await User.findById(consultation.professional);
+    await sendBookingConfirmedEmails(consultation, consultation.writer, professional);
 
     return res.status(200).json({ message: "Payment verified successfully.", consultation });
   } catch (error) {
@@ -222,7 +301,7 @@ export const verifyPayment = async (req, res) => {
 
 export const getWriterConsultations = async (req, res) => {
   try {
-    const consultations = await Consultation.find({ writer: req.user._id })
+    const consultations = await Consultation.find({ writer: req.user._id, status: { $nin: ["payment_pending", "payment_failed"] } })
       .populate("professional", "name email profileImage role")
       .sort({ createdAt: -1 });
     return res.status(200).json(consultations);
@@ -233,7 +312,7 @@ export const getWriterConsultations = async (req, res) => {
 
 export const getProfessionalConsultations = async (req, res) => {
   try {
-    const consultations = await Consultation.find({ professional: req.user._id })
+    const consultations = await Consultation.find({ professional: req.user._id, status: { $nin: ["payment_pending", "payment_failed"] } })
       .populate("writer", "name email profileImage role")
       .sort({ createdAt: -1 });
     return res.status(200).json(consultations);
@@ -275,29 +354,15 @@ export const acceptConsultation = async (req, res) => {
     }
 
     const professional = await User.findById(req.user._id).select("+googleCalendar.refreshTokenEnc").lean();
-      
-    let meetingLink = "https://meet.google.com/aut-omat-icly";
-    let googleEventId = "dummy_event_id";
-      
-    if (professional.googleCalendar?.connected && professional.googleCalendar?.refreshTokenEnc) {
-      try {
-        const refreshToken = decryptToken(professional.googleCalendar.refreshTokenEnc);
-        const { accessToken } = await getAccessTokenFromRefresh(refreshToken);
-        const event = await createMeetingEvent({
-          accessToken,
-          summary: `Ckript Consultation: ${consultation.writer.name} & ${professional.name}`,
-          description: `Topic: ${consultation.topic}\n\n${consultation.additionalMessage || ""}`,
-          startISO: consultation.scheduledStart.toISOString(),
-          endISO: consultation.scheduledEnd.toISOString(),
-          timeZone: consultation.timezone,
-          attendees: [professional.email, consultation.writer.email],
-        });
-        meetingLink = event.meetLink;
-        googleEventId = event.eventId;
-      } catch (err) {
-        console.error("Google Calendar API Error (bypassed):", err);
-      }
-    }
+
+    const meeting = await createConsultationMeeting({
+      consultation,
+      professional,
+      start: consultation.scheduledStart,
+      end: consultation.scheduledEnd,
+    });
+    if (meeting.error) return res.status(meeting.error.status).json(meeting.error.body);
+    const { meetingLink, googleEventId } = meeting;
 
     consultation.googleMeetUrl = meetingLink;
     consultation.googleEventId = googleEventId;
@@ -345,6 +410,10 @@ export const rejectConsultation = async (req, res) => {
     if (!consultation) return res.status(404).json({ message: "Consultation not found." });
     if (String(consultation.professional._id) !== String(req.user._id)) {
       return res.status(403).json({ message: "Not authorized." });
+    }
+    // Only an open booking can be rejected - this also stops a second reject from re-running the refund.
+    if (!["awaiting_response", "accepted", "meeting_scheduled"].includes(consultation.status)) {
+      return res.status(400).json({ message: "This consultation can no longer be rejected." });
     }
 
     consultation.status = "rejected";
@@ -554,40 +623,20 @@ export const rescheduleConsultation = async (req, res) => {
     }
 
     const professional = await User.findById(req.user._id).select("+googleCalendar.refreshTokenEnc").lean();
-    
-    let meetingLink = "https://meet.google.com/aut-omat-icly";
-    let googleEventId = "dummy_event_id";
-      
-    // Attempt calendar if connected
-    if (professional.googleCalendar?.connected && professional.googleCalendar?.refreshTokenEnc) {
-      try {
-        const { decryptToken } = require("../utils/accountSecurity.js");
-        const { getAccessTokenFromRefresh, createMeetingEvent } = require("../utils/googleCalendar.js");
-        
-        const refreshToken = decryptToken(professional.googleCalendar.refreshTokenEnc);
-        const { accessToken } = await getAccessTokenFromRefresh(refreshToken);
-        
-        const start = new Date(newStartISO);
-        const end = new Date(start.getTime() + consultation.duration * 60000);
-        
-        const event = await createMeetingEvent({
-          accessToken,
-          summary: `Ckript Consultation: ${consultation.writer.name} & ${professional.name}`,
-          description: `Topic: ${consultation.topic}\n\n${consultation.additionalMessage || ""}`,
-          startISO: start.toISOString(),
-          endISO: end.toISOString(),
-          timeZone: consultation.timezone,
-          attendees: [professional.email, consultation.writer.email],
-        });
-        meetingLink = event.meetLink;
-        googleEventId = event.eventId;
-      } catch (err) {
-        console.error("Google Calendar API Error (bypassed on reschedule):", err);
-      }
-    }
 
     const newStart = new Date(newStartISO);
+    if (Number.isNaN(newStart.getTime())) return res.status(400).json({ message: "Invalid start time." });
     const newEnd = new Date(newStart.getTime() + consultation.duration * 60000);
+
+    const meeting = await createConsultationMeeting({
+      consultation,
+      professional,
+      start: newStart,
+      end: newEnd,
+      replaceEventId: consultation.googleEventId,
+    });
+    if (meeting.error) return res.status(meeting.error.status).json(meeting.error.body);
+    const { meetingLink, googleEventId } = meeting;
 
     consultation.scheduledStart = newStart;
     consultation.scheduledEnd = newEnd;

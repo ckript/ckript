@@ -44,6 +44,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { AuthContext } from "../../context/AuthContext";
 import MeetingModal from "../../components/MeetingModal";
+import { describeCalendarFailure } from "../../utils/googleCalendarPopup";
 import { MatIcon } from "../../layouts/app-shell/navigation/icons.jsx";
 import { getScriptCanonicalPath } from "../../utils/scriptPath";
 import { getProfileCanonicalPath } from "../../utils/profilePath";
@@ -89,6 +90,7 @@ import LedgerDealRow from "./components/LedgerDealRow";
 import LedgerAside from "./components/LedgerAside";
 import LedgerDetailDrawer from "./components/LedgerDetailDrawer";
 import LedgerConfirmDialog from "./components/LedgerConfirmDialog";
+import ConsultationConfirmedDialog from "./components/ConsultationConfirmedDialog";
 import "./ProducerDashboardPage.css";
 
 /*
@@ -195,6 +197,32 @@ const ProducerDashboardPage = () => {
   const [actioningId, setActioningId] = useState(null);
   const [rescheduleData, setRescheduleData] = useState(null); // { id: string, date: string }
   const [needsCalendar, setNeedsCalendar] = useState(false);
+  const [calendarNotice, setCalendarNotice] = useState("");
+  const [confirmedConsultation, setConfirmedConsultation] = useState(null); // { variant, consultation }
+  const closeConfirmedConsultation = useCallback(() => setConfirmedConsultation(null), []);
+
+  /* "Connect Google Calendar" is a full-page trip to Google, which sends the browser back here with
+     ?calendar=connected|error&reason=…. Without reading it, a failed connection looked identical to
+     never having tried: the same "Connect your Google Calendar" banner on the next Accept. */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get("calendar");
+    if (!flag) return;
+    const reason = params.get("reason") || "";
+    if (flag === "connected") {
+      setNeedsCalendar(false);
+      setActionError("");
+      setCalendarNotice("Google Calendar connected. You can now accept consultations - a Google Meet link will be created and emailed to you and the writer.");
+      setUser((previous) => (previous ? { ...previous, googleCalendar: { ...(previous.googleCalendar || {}), connected: true } } : previous));
+    } else {
+      setNeedsCalendar(true);
+      setActionError(describeCalendarFailure(reason));
+    }
+    params.delete("calendar");
+    params.delete("reason");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [setUser]);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -386,8 +414,10 @@ const ProducerDashboardPage = () => {
     setNeedsCalendar(false);
     setActionError("");
     try {
-      await api.post(`/consultations/${id}/accept`);
-      setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted" } : c));
+      const { data } = await api.post(`/consultations/${id}/accept`);
+      const accepted = consultations.find(c => c._id === id);
+      setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted", googleMeetUrl: data?.consultation?.googleMeetUrl || c.googleMeetUrl } : c));
+      setConfirmedConsultation({ variant: "accepted", consultation: { ...accepted, ...(data?.consultation || {}) } });
     } catch (error) {
       if (error?.response?.status === 428) {
         setNeedsCalendar(true);
@@ -409,14 +439,18 @@ const ProducerDashboardPage = () => {
     try {
       const res = await api.post(`/consultations/${id}/reschedule`, { newStartISO: new Date(rescheduleData.date).toISOString() });
       if (res.data) {
-        setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted", scheduledStart: res.data.consultation.scheduledStart, scheduledEnd: res.data.consultation.scheduledEnd } : c));
+        setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted", scheduledStart: res.data.consultation.scheduledStart, scheduledEnd: res.data.consultation.scheduledEnd, googleMeetUrl: res.data.consultation.googleMeetUrl } : c));
         setRescheduleData(null);
-          // Show professional success pop-up
-          window.alert("Success! The consultation has been beautifully rescheduled. The updated time and Google Meet link have been emailed to both you and the writer.");
+          setConfirmedConsultation({ variant: "rescheduled", consultation: { ...consultations.find(c => c._id === id), ...res.data.consultation } });
         }
     } catch (err) {
       console.error(err);
-      alert("Failed to reschedule.");
+      if (err?.response?.status === 428) {
+        setNeedsCalendar(true);
+        setActionError(err.response.data?.message || "Connect your Google Calendar to reschedule.");
+        setRescheduleData(null);
+      }
+      alert(err?.response?.data?.message || "Failed to reschedule.");
     } finally {
       setActioningId(null);
     }
@@ -830,6 +864,14 @@ const ProducerDashboardPage = () => {
       </div>
       
       <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "24px" }}>
+        {calendarNotice && !actionError && (
+          <div style={{ gridColumn: "1 / -1", padding: "16px", background: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+            <p style={{ margin: 0, fontWeight: "500" }}>{calendarNotice}</p>
+            <button onClick={() => setCalendarNotice("")} style={{ padding: "6px 12px", background: "transparent", color: "#065f46", border: "1px solid #6ee7b7", borderRadius: "8px", cursor: "pointer", fontWeight: "600" }}>
+              Dismiss
+            </button>
+          </div>
+        )}
         {actionError && (
           <div style={{ gridColumn: "1 / -1", padding: "16px", background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <p style={{ margin: 0, fontWeight: "500" }}>{actionError}</p>
@@ -1315,6 +1357,13 @@ const ProducerDashboardPage = () => {
           onDownloadPdf={handleDownloadPdf}
         />
       )}
+
+      <ConsultationConfirmedDialog
+        open={Boolean(confirmedConsultation)}
+        variant={confirmedConsultation?.variant}
+        consultation={confirmedConsultation?.consultation}
+        onClose={closeConfirmedConsultation}
+      />
 
       <LedgerConfirmDialog
         open={Boolean(confirm)}
