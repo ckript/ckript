@@ -681,21 +681,27 @@
 }
 
 /* --- Third-party sign-in ------------------------------------------------
- * GoogleSignInButton renders Google's own iframe, whose chrome cannot be
- * restyled — and swapping it for a look-alike would mean swapping the ID-token
- * flow the server expects for an OAuth code flow it does not. So the slot is
- * shaped to the prototype's row and the real control is centred inside it.
+ * Google renders its own button and none of its chrome can be reached from
+ * here. This element used to draw a 50px, 13px-corner frame around it, which
+ * made a white rounded box inside a white rounded box with two borders, two
+ * radii and fifteen pixels of dead air either side.
+ *
+ * A slot cannot make a third-party button belong; it can only stop competing
+ * with it. So there is no frame — this is a measurement, and the width it
+ * measures is handed to Google as the one lever that makes its button line up
+ * with the actions above it. See AuthGoogleSlot.jsx.
  */
 .ckm .ckm-auth__google {
   display: flex;
-  align-items: center;
   justify-content: center;
-  min-height: var(--ckma-control-h);
-  padding: 0 var(--ckm-space-2);
-  background: var(--ckma-surface);
-  border: 1px solid var(--ckma-line);
-  border-radius: var(--ckma-radius-control);
-  overflow: hidden;
+  width: 100%;
+  /* Google's own button is 40px; hold the row's height so the stack does not
+     jump when it finishes rendering. */
+  min-height: 40px;
+}
+
+.ckm .ckm-auth__google > div {
+  width: 100%;
 }
 
 .ckm .ckm-auth__divider {

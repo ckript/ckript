@@ -1,6 +1,8 @@
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../Icon";
 import useMobileNav from "../../hooks/useMobileNav";
+import NavMoreSheet from "./NavMoreSheet";
 import "./NavBar.css";
 
 /*
@@ -17,6 +19,17 @@ import "./NavBar.css";
  *   • `active` was a prop the screen passed ("dashboard", always), which §8.2
  *     forbids: "A URL determines the active tab; local component state does
  *     not." The old bar's active tab was literally a constant.
+ *
+ * THE MORE CELL
+ * -------------
+ * A fifth cell appears when the audience has destinations the four slots cannot
+ * hold. It is not decoration: the bar plus this sheet is the WHOLE of navigation
+ * in the mobile app — there is no drawer here — so anything missing from both
+ * cannot be reached on a phone at all. That is not hypothetical; it is how a
+ * producer came to have no route to their own dashboard or to Browse Writers.
+ *
+ * It is the one control in the bar that is a <button>, because it discloses
+ * rather than navigates. Everything inside the sheet is a link again.
  *
  * WHY LINKS, NOT BUTTONS
  * ----------------------
@@ -47,9 +60,23 @@ export default function NavBar({
   className = "",
   ...rest
 }) {
-  const { tabs, activeTabKey } = useMobileNav({ user, msgCount });
+  const { tabs, activeTabKey, overflow, activeOverflowKey } = useMobileNav({ user, msgCount });
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
 
   const classes = ["ckm-navbar", className].filter(Boolean).join(" ");
+
+  /*
+   * The More cell reads as current when the URL is one of its rows, so a viewer
+   * on /mandates sees which cell they arrived through instead of a bar with
+   * nothing selected. Because the bar and the overflow hold disjoint paths,
+   * this can never be true at the same time as a tab's own aria-current.
+   */
+  const moreIsCurrent = Boolean(activeOverflowKey);
+
+  /* Unread that is NOT already shown on a tab still has to surface somewhere,
+     or the count silently disappears when a destination moves into the sheet. */
+  const hiddenBadge = overflow.reduce((total, item) => total + item.badge, 0);
 
   return (
     <nav className={classes} aria-label={label} {...rest}>
@@ -92,7 +119,41 @@ export default function NavBar({
             </li>
           );
         })}
+
+        {overflow.length > 0 && (
+          <li className="ckm-navbar__item">
+            <button
+              ref={moreRef}
+              type="button"
+              className={`ckm-navbar__link ckm-navbar__link--more${moreIsCurrent ? " is-active" : ""}`}
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+            >
+              <span className="ckm-navbar__icon">
+                <Icon name="more_horiz" size={24} fill={moreIsCurrent} />
+                {hiddenBadge > 0 && (
+                  <span className="ckm-navbar__badge" aria-hidden="true">
+                    {hiddenBadge > 99 ? "99+" : hiddenBadge}
+                  </span>
+                )}
+              </span>
+              <span className="ckm-navbar__label">More</span>
+              {hiddenBadge > 0 && (
+                <span className="ckm-sr-only">{`, ${hiddenBadge} unread`}</span>
+              )}
+            </button>
+          </li>
+        )}
       </ul>
+
+      <NavMoreSheet
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        items={overflow}
+        activeKey={activeOverflowKey}
+        returnFocusTo={moreRef}
+      />
     </nav>
   );
 }

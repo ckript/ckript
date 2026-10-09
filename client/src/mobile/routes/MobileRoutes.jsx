@@ -1,8 +1,10 @@
-import { lazy } from "react";
-import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { lazy, useCallback, useContext } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import MobileRouteBoundary from "../shell/MobileRouteBoundary";
-import { isOwnProfileKey } from "./mobileRoutePolicy";
+import { resolveProfileOwnership } from "./mobileRoutePolicy";
 import { isIndustryAudience } from "../../layouts/app-shell/shellPolicy";
+import { AuthContext } from "../../context/AuthContext";
+import { useAuthenticatedProfile } from "../../pages/profile/useAuthenticatedProfile";
 
 const Dashboard = lazy(() => import("../screens/Dashboard"));
 const Holds = lazy(() => import("../screens/Holds"));
@@ -76,14 +78,88 @@ function SignUpRedirect({ as }) {
   return <Navigate to={`/signup?${params.toString()}`} replace />;
 }
 
+/*
+ * AuthenticatedProfileRoute — which profile, and whose it is.
+ *
+ * THE URL SELECTS WHICH PROFILE. THE DATA DECIDES WHOSE IT IS.
+ *
+ * This used to read `isOwnProfileKey(id, user)` and mount the owner or the
+ * visitor desk from that alone, and it produced a bug worth stating in full,
+ * because the shape of it recurs:
+ *
+ *   1. the viewer opens /profile, or /profile/<their id> — own, so the owner's
+ *      workspace mounts, with Edit and the settings switches;
+ *   2. the desk loads the profile and canonicalizes the URL to the pretty form
+ *      the app prefers — /ada_lovelace;
+ *   3. the route matches again on the new URL and re-runs the same check, which
+ *      now has to recognise a NORMALIZED username segment (spaces to
+ *      underscores, punctuation stripped) as belonging to a session whose
+ *      username is "Ada Lovelace";
+ *   4. it does not, so the viewer's own profile is replaced, mid-visit, by a
+ *      stranger's view of them.
+ *
+ * The root cause was not a missing case in the matcher. It was asking the
+ * question of the wrong thing. A URL segment is a lossy projection of an
+ * identity — id, sid, normalized username, a `canonicalPath` the server chose,
+ * or a segment lifted from a share link — and reversing it means guessing.
+ * Ownership is not a property of the URL; it is a property of the profile that
+ * came back, and `isSameProfile` has compared ids for the desktop all along.
+ *
+ * So the fetch moves up here, above the owner/visitor split, and:
+ *
+ *   · the answer is `isSameProfile(viewer, profile)` — exact, and identical for
+ *     every URL form that resolves to the same person, so canonicalizing cannot
+ *     change it;
+ *   · the URL hint is consulted ONLY while that request is in flight, to pick
+ *     the first screen. A wrong hint now costs one frame of the wrong skeleton
+ *     instead of the wrong screen for the rest of the visit;
+ *   · both desks receive the state instead of fetching their own, so the switch
+ *     costs no second request and no second loading state.
+ */
 function AuthenticatedProfileRoute({ user }) {
   const { id } = useParams();
-  const { search } = useLocation();
-  const own = isOwnProfileKey(id, user);
-  if (own && new URLSearchParams(search).get("tab") === "settings") {
+  const location = useLocation();
+  const navigate = useNavigate();
+  /* Read defensively: MobileRoutes is mounted without a provider by its own
+     render tests and by the route fixtures, and a navigation route must not be
+     the thing that crashes when the session context is absent. `useMobileNav`
+     reads the same context the same way. */
+  const auth = useContext(AuthContext);
+
+  /* A bare /profile is the viewer's own, and the server needs a key either way. */
+  const profileKey = id || user?._id || "";
+
+  const canonicalize = useCallback((path) => {
+    if (path && path !== location.pathname) {
+      navigate(`${path}${location.search}`, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
+
+  const profileState = useAuthenticatedProfile({
+    profileKey,
+    viewer: user,
+    setViewer: auth?.setUser,
+    onCanonicalPath: canonicalize,
+  });
+
+  /*
+   * `profile` is null while loading and after a failure, which is exactly when
+   * the hint is the only thing there is. Once it is present it is the answer,
+   * and it stays the answer through any number of URL rewrites.
+   */
+  const own = resolveProfileOwnership({
+    viewer: user,
+    profile: profileState.profile,
+    urlKey: id,
+  });
+
+  if (own && new URLSearchParams(location.search).get("tab") === "settings") {
     return <AccountSettingsMobile user={user} />;
   }
-  return own ? <ProfileOwnerMobile user={user} /> : <ProfileVisitorMobile user={user} />;
+
+  return own
+    ? <ProfileOwnerMobile user={user} profileState={profileState} />
+    : <ProfileVisitorMobile user={user} profileState={profileState} />;
 }
 
 /*

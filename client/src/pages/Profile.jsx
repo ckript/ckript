@@ -2,6 +2,8 @@ import { useDeferredValue, useEffect, useState, useContext, useRef, useCallback 
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion as Motion } from "framer-motion";
 import api from "../services/api";
+import { razorpayKeyFromOrder } from "../utils/razorpayKey";
+import { loadRazorpaySdk } from "../utils/loadRazorpaySdk";
 import { AuthContext } from "../context/AuthContext";
 import { useAuthModal } from "../context/AuthModalContext";
 import { useDarkMode } from "../context/DarkModeContext";
@@ -292,7 +294,7 @@ const Profile = () => {
   // Pitch
   const [showPitchModal, setShowPitchModal] = useState(false);
   const [myScripts, setMyScripts] = useState([]);
-  const [pitchData, setPitchData] = useState({ scriptId: "", note: "" });
+  const [pitchData, setPitchData] = useState({ scriptId: "", note: "", duration: "", date: "", time: "" });
   const [sendingPitch, setSendingPitch] = useState(false);
   const [pitchSuccess, setPitchSuccess] = useState(false);
 
@@ -571,21 +573,111 @@ const Profile = () => {
     }
   };
 
+  
+  const handleDirectBooking = async () => {
+    try {
+      setSendingPitch(true);
+      const showBookedAndReset = () => {
+        setPitchSuccess(true);
+        setTimeout(() => {
+          setShowPitchModal(false);
+          setPitchSuccess(false);
+          setPitchData({ scriptId: "", note: "", duration: "", date: "", time: "", currency: "INR" });
+        }, 2000);
+      };
+
+      const { data: order } = await api.post("/consultations", {
+        professionalId: profile._id,
+        date: pitchData.date,
+        time: pitchData.time,
+        duration: pitchData.duration,
+        currency: pitchData.currency || "INR",
+        topic: pitchData.topic || "Book Consultation",
+        fileLink: pitchData.fileLink || undefined,
+        additionalMessage: pitchData.note
+      });
+
+      // Payments are switched off on the server (CONSULTATION_PAYMENTS_ENABLED) - booking is already confirmed.
+      if (!order.paymentRequired) {
+        showBookedAndReset();
+        setSendingPitch(false);
+        return;
+      }
+
+      const sdkReady = await loadRazorpaySdk();
+      if (!sdkReady) {
+        throw new Error("Payment SDK failed to load. Disable ad blocker/privacy extension for checkout.razorpay.com and try again.");
+      }
+
+      if (order.fellBackToINR) {
+        alert("International payments are unavailable right now, so this consultation will be charged in INR.");
+      }
+
+      const checkout = new window.Razorpay({
+        key: razorpayKeyFromOrder(order),
+        amount: order.amount,
+        currency: order.currency,
+        name: "Ckript Consultations",
+        description: `Consultation with ${profile.name}`,
+        order_id: order.orderId,
+        prefill: {
+          name: currentUser?.name || "",
+          email: currentUser?.email || "",
+        },
+        theme: { color: "#8a3324" },
+        handler: async (response) => {
+          try {
+            await api.post(`/consultations/${order.consultationId}/payment/verify`, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            showBookedAndReset();
+          } catch (verifyErr) {
+            console.error("Consultation payment verification error:", verifyErr);
+            alert(verifyErr.response?.data?.message || "Payment verification failed. If money was deducted, it will be refunded.");
+          } finally {
+            setSendingPitch(false);
+          }
+        },
+        modal: {
+          ondismiss: () => setSendingPitch(false),
+        },
+      });
+      checkout.on("payment.failed", (response) => {
+        alert(response?.error?.description || "Payment failed. Please try again.");
+      });
+      checkout.open();
+    } catch (err) {
+      console.error("Booking Error:", err);
+      alert(err.response?.data?.message || err.message || "Failed to book consultation.");
+      setSendingPitch(false);
+    }
+  };
+
   const handleSendPitch = async () => {
     if (!pitchData.scriptId) return alert("Please select a script");
+    
+    if (pitchData.duration) {
+      if (!pitchData.date || !pitchData.time) return alert("Please select a preferred date and time.");
+      return handleDirectBooking();
+    }
     try {
       setSendingPitch(true);
       const result = await sendProfilePitch({
         scriptId: pitchData.scriptId,
         profileId: profile._id,
-        note: pitchData.note
+        note: pitchData.note,
+        duration: pitchData.duration,
+        date: pitchData.date,
+        time: pitchData.time
       });
       if (!result.ok) throw result.cause || new Error(result.message);
       setPitchSuccess(true);
       setTimeout(() => {
         setShowPitchModal(false);
         setPitchSuccess(false);
-        setPitchData({ scriptId: "", note: "" });
+        setPitchData({ scriptId: "", note: "", duration: "", date: "", time: "" });
       }, 2000);
     } catch (error) {
       console.error("Error sending pitch:", error);
@@ -1220,7 +1312,7 @@ const Profile = () => {
                             disabled={isBlockedByCurrent || blockedByProfile || followLoading}
                             className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border disabled:opacity-55 disabled:cursor-not-allowed ${t.followIdle}`}
                           >
-                            Pitch Script
+                            Book Consultation
                           </button>
                         )}
                         <button
@@ -1283,7 +1375,7 @@ const Profile = () => {
                                   disabled={isBlockedByCurrent || blockedByProfile || followLoading}
                                   className={`px-3 sm:px-4 py-1.5 rounded-xl text-[12px] sm:text-[13px] font-bold transition-all border disabled:opacity-55 disabled:cursor-not-allowed ${t.followIdle}`}
                                 >
-                                  Pitch Script
+                                  Book Consultation
                                 </button>
                               )}
                               <button
@@ -1388,9 +1480,9 @@ const Profile = () => {
                           {profile.name}
                         </h1>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em] border ${t.roleBg}`}>
-                            {profile.role}
-                          </span>
+                          <span title={profile.role === 'investor' ? 'Film Industry Professional' : undefined} className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em] border ${t.roleBg}`}>
+                              {profile.role === 'investor' ? 'FIP' : profile.role}
+                            </span>
                           {hasActiveFilmIndustryProfessionalAccess(profile) && (
                             <PremiumModelBadge size="md" dark={dark} />
                           )}
@@ -1953,10 +2045,11 @@ const Profile = () => {
             >
               <div className="mt-2">
                 <span
-                  className={`inline-flex px-3 py-1.5 rounded-lg text-[13px] font-bold border ${t.roleTag}`}
-                >
-                  {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
-                </span>
+                    title={profile.role === 'investor' ? 'Film Industry Professional' : undefined}
+                    className={`inline-flex px-3 py-1.5 rounded-lg text-[13px] font-bold border ${t.roleTag}`}
+                  >
+                    {profile.role === 'investor' ? 'FIP' : (profile.role.charAt(0).toUpperCase() + profile.role.slice(1))}
+                  </span>
               </div>
             </SectionCard>
 
@@ -3244,7 +3337,7 @@ const Profile = () => {
           <Motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
+            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border max-h-[90vh] overflow-y-auto ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
             onClick={(e) => e.stopPropagation()}
           >
             {pitchSuccess ? (
@@ -3254,19 +3347,19 @@ const Profile = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className={`text-lg font-extrabold mb-2 ${dark ? "text-white" : "text-gray-900"}`}>Pitch Sent!</h3>
+                <h3 className={`text-lg font-extrabold mb-2 ${dark ? "text-white" : "text-gray-900"}`}>Request Sent!</h3>
                 <p className={`text-sm ${dark ? "text-white/50" : "text-gray-500"}`}>
-                  Your pitch to {profile.name} was successfully submitted.
+                  Your consultation request was successfully submitted.
                 </p>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className={`text-lg font-extrabold ${dark ? "text-white" : "text-gray-900"}`}>Pitch Script</h3>
+                    <h3 className={`text-lg font-extrabold ${dark ? "text-white" : "text-gray-900"}`}>Book Consultation</h3>
                     <p className={`text-sm mt-1 ${dark ? "text-white/50" : "text-gray-500"}`}>
-                      Select a script to pitch to {profile.name}
-                    </p>
+                      Book a consultation call with a Film Industry Professional
+                </p>
                   </div>
                   <button
                     onClick={() => setShowPitchModal(false)}
@@ -3281,39 +3374,137 @@ const Profile = () => {
                 <div className="space-y-4 mb-6">
                   <div>
                     <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
-                      Select Script
+                      Topic
                     </label>
-                    <select
-                      value={pitchData.scriptId}
-                      onChange={(e) => setPitchData({ ...pitchData, scriptId: e.target.value })}
+                    <input
+                      type="text"
+                      value={pitchData.topic || ""}
+                      onChange={(e) => setPitchData({ ...pitchData, topic: e.target.value })}
+                      placeholder="e.g. Script Review, General Guidance"
                       className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${
                         dark 
                           ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20" 
-                          : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-purple-500"
+                          : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
                       }`}
-                    >
-                      <option value="">-- Choose a script --</option>
-                      {myScripts.map(script => (
-                        <option key={script._id} value={script._id}>{script.title}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
+                        Currency
+                      </label>
+                      <select
+                        value={pitchData.currency || "INR"}
+                        onChange={(e) => setPitchData({ ...pitchData, currency: e.target.value })}
+                        className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${
+                          dark 
+                            ? "bg-white/[0.03] border-white/[0.06] text-white focus:border-[#a04030]" 
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
+                        }`}
+                      >
+                        <option value="INR">INR (?)</option>
+                        <option value="USD">USD ($)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
+                        Duration
+                      </label>
+                      <select
+                        value={pitchData.duration}
+                        onChange={(e) => setPitchData({ ...pitchData, duration: e.target.value })}
+                        className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${
+                          dark 
+                            ? "bg-white/[0.03] border-white/[0.06] text-white focus:border-[#a04030]" 
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
+                        }`}
+                      >
+                        <option value="">-- Select Duration --</option>
+                        <option value="30">30 Min - {(!pitchData.currency || pitchData.currency === "INR") ? "?8000" : "$9"}</option>
+                        <option value="60">1 Hour - {(!pitchData.currency || pitchData.currency === "INR") ? "?15000" : "$16"}</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
+                        Preferred Date
+                      </label>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={pitchData.date}
+                        onChange={(e) => setPitchData({ ...pitchData, date: e.target.value })}
+                        className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${pitchData.date ? "font-bold text-[#8a3324]" : ""} ${
+                          dark 
+                            ? "bg-white/[0.03] border-white/[0.06] text-white focus:border-[#a04030] shadow-sm" 
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324] shadow-sm"
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
+                        Preferred Time
+                      </label>
+                      <input
+                        type="time"
+                        value={pitchData.time}
+                        onChange={(e) => setPitchData({ ...pitchData, time: e.target.value })}
+                        className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${pitchData.time ? "font-bold text-[#8a3324]" : ""} ${
+                          dark 
+                            ? "bg-white/[0.03] border-white/[0.06] text-white focus:border-[#a04030] shadow-sm" 
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324] shadow-sm"
+                        }`}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
-                      Pitch Note (Optional)
+                      anything you want that i can prepare or go through it before meet (Optional)
                     </label>
                     <textarea
                       value={pitchData.note}
                       onChange={(e) => setPitchData({ ...pitchData, note: e.target.value })}
-                      placeholder="Add a brief note about why this fits their mandate..."
+                      placeholder="Add a brief note or any questions you have for the consultation..."
                       className={`w-full min-h-[100px] p-3 rounded-xl border text-[13px] outline-none resize-none transition-all ${
                         dark 
                           ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20 placeholder-white/20" 
-                          : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-purple-500 placeholder-gray-400"
+                          : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324] placeholder-gray-400"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-[13px] font-bold mb-2 ${dark ? "text-white/70" : "text-gray-700"}`}>
+                      Attach a file or PDF link (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={pitchData.fileLink || ""}
+                      onChange={(e) => setPitchData({ ...pitchData, fileLink: e.target.value })}
+                      placeholder="Paste a Google Drive or Dropbox link here..."
+                      className={`w-full p-3 rounded-xl border text-[13px] outline-none transition-all ${
+                        dark 
+                          ? "bg-white/[0.03] border-white/[0.06] text-white focus:bg-white/[0.05] focus:border-white/20" 
+                          : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
                       }`}
                     />
                   </div>
                 </div>
+
+                {pitchData.duration && (
+                  <div className={`mb-4 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[12.5px] leading-relaxed ${
+                    dark ? "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  }`}>
+                    <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                    </svg>
+                    <span>
+                      <strong>100% refund guarantee:</strong> if {profile.name || "the professional"} rejects your consultation request, your full payment will be refunded to your original payment method.
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex gap-3">
                   <button
@@ -3328,10 +3519,10 @@ const Profile = () => {
                     onClick={handleSendPitch}
                     disabled={!pitchData.scriptId || sendingPitch}
                     className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                      dark ? "bg-purple-500 text-white hover:bg-purple-600" : "bg-purple-600 text-white hover:bg-purple-700 shadow-md"
+                      dark ? "bg-[#a04030] text-white hover:bg-[#8a3324]" : "bg-[#8a3324] text-white hover:bg-[#6a2519] shadow-md"
                     }`}
                   >
-                    {sendingPitch ? "Sending..." : "Submit Pitch"}
+                    {sendingPitch ? "Processing..." : pitchData.duration ? "Pay & Book Consultation" : "Book Consultation"}
                   </button>
                 </div>
               </>
@@ -3349,7 +3540,7 @@ const Profile = () => {
           <Motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
+            className={`rounded-2xl shadow-2xl max-w-lg w-full p-6 border max-h-[90vh] overflow-y-auto ${dark ? "bg-[#0d1520] border-white/[0.06]" : "bg-white border-gray-200"}`}
             onClick={(e) => e.stopPropagation()}
           >
             {requestSuccess ? (

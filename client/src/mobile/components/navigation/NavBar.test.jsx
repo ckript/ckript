@@ -38,8 +38,9 @@ describe("NavBar", () => {
     const nav = el.querySelector("nav");
     expect(nav.getAttribute("aria-label")).toBe("Primary");
     // A list, so a screen reader announces how many destinations there are
-    // before the user commits to walking them.
-    expect(el.querySelectorAll("ul > li").length).toBe(4);
+    // before the user commits to walking them. Four destinations and the More
+    // cell, which is a member of the same set and belongs in the same count.
+    expect(el.querySelectorAll("ul > li").length).toBe(5);
     expect(links(el).length).toBe(4);
   });
 
@@ -51,8 +52,11 @@ describe("NavBar", () => {
     act(() => root.unmount());
     container.remove();
 
+    // 2026-09-03: Featured and Profile moved under More so the bar could carry
+    // /dashboard and /writers, which no mobile screen linked to and which the
+    // old bar had no room for — leaving them unreachable on a phone.
     expect(labels(render(<NavBar user={PRODUCER} route="/home" />)))
-      .toEqual(["Discover", "Featured", "Messages", "Profile"]);
+      .toEqual(["Discover", "Dashboard", "Writers", "Messages"]);
   });
 
   /*
@@ -89,8 +93,51 @@ describe("NavBar", () => {
     const el = render(<NavBar user={WRITER} />);
     expect(links(el).map((a) => a.getAttribute("href")))
       .toEqual(["/dashboard", "/dashboard?tab=projects", "/messages", "/ada"]);
-    // …and nothing in the bar is a button pretending to be a link.
-    expect(el.querySelectorAll("button")).toHaveLength(0);
+
+    /*
+     * Every DESTINATION is a link. The single button is the More cell, which
+     * discloses a sheet rather than navigating — the distinction the original
+     * "no buttons" rule was really drawing. A button that went somewhere would
+     * still be the defect it always was.
+     */
+    const buttons = [...el.querySelectorAll("button")];
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].className).toContain("ckm-navbar__link--more");
+    expect(buttons[0].getAttribute("aria-haspopup")).toBe("dialog");
+  });
+
+  /*
+   * The bar plus its sheet is the whole of navigation in the mobile app. These
+   * cover the cell that makes the second half reachable at all.
+   */
+  describe("the More cell", () => {
+    const moreButton = (el) => el.querySelector(".ckm-navbar__link--more");
+
+    it("opens a sheet listing the destinations the bar could not hold", () => {
+      const el = render(<NavBar user={PRODUCER} />, { route: "/home" });
+      expect(moreButton(el).getAttribute("aria-expanded")).toBe("false");
+
+      act(() => moreButton(el).click());
+
+      expect(moreButton(el).getAttribute("aria-expanded")).toBe("true");
+      const sheetLinks = [...el.ownerDocument.querySelectorAll(".ckm-row__main")]
+        .map((a) => a.getAttribute("href"))
+        .filter(Boolean);
+      expect(sheetLinks).toEqual(expect.arrayContaining(["/featured", "/top-script", "/mandates"]));
+    });
+
+    it("reads as current when the viewer is on one of its destinations", () => {
+      const el = render(<NavBar user={PRODUCER} />, { route: "/mandates" });
+      expect(moreButton(el).className).toContain("is-active");
+      // …and no tab claims a URL that is not its own.
+      expect(links(el).filter((a) => a.getAttribute("aria-current"))).toHaveLength(0);
+    });
+
+    it("is not current when a real tab owns the URL", () => {
+      const el = render(<NavBar user={PRODUCER} />, { route: "/writers" });
+      expect(moreButton(el).className).not.toContain("is-active");
+      expect(links(el).filter((a) => a.getAttribute("aria-current") === "page")).toHaveLength(1);
+    });
   });
 
   it("puts an unread count in the accessible name, not only in the badge", () => {

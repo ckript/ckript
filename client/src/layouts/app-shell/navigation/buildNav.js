@@ -54,8 +54,18 @@ const PRESETS = {
 };
 
 /*
- * The mobile bar is a fixed row of four. Profile always takes the last slot, so
- * a preset chooses three.
+ * The mobile bar is a fixed row of four destinations. The chrome adds a fifth
+ * "More" cell of its own when there is anything left over (see mobileOverflow).
+ *
+ * Profile used to be appended here as a hard-coded fourth slot, so a preset
+ * chose three. That was fine while every audience wanted Profile in the bar and
+ * fatal for the one that does not: the industry audience needs Discover,
+ * Dashboard, Writers and Messages, and a pinned Profile left no room for the
+ * two that matter most. A producer on a phone could reach neither their own
+ * deal book nor Browse Writers — from the bar or from anywhere else.
+ *
+ * So the slot is no longer magic. Each preset names all four keys it wants,
+ * Profile included, and whatever it leaves out is still reachable under More.
  */
 export const MOBILE_SLOTS = 4;
 
@@ -67,24 +77,52 @@ export const MOBILE_SLOTS = 4;
  * which is exactly what happened when Challenge was added. Selecting by key
  * means the rail can be reordered or grown without touching mobile.
  */
-const buildMobile = (rail, mobileKeys, profilePath, mobileItems = []) => {
+const buildMobile = (rail, mobileKeys, mobileItems = []) => {
   // Most compact destinations come from the rail. A preset may also publish a
   // compact-only destination when the phone's information architecture differs
   // deliberately — for example, Projects replaces Create for writers without
-  // adding a query-tab destination to the desktop rail.
+  // adding a query-tab destination to the desktop rail. `mobileItems` is listed
+  // second so it WINS on a shared key: the rail calls a writer's profile
+  // "Writer Profile", which is right beside five other writer destinations and
+  // too long for a 1/5 column.
   const byKey = new Map(
     [...rail, ...mobileItems].filter((item) => item?.key).map((item) => [item.key, item]),
   );
 
-  const picked = mobileKeys
+  return mobileKeys
     .map((key) => byKey.get(key))
     .filter(Boolean)
-    .slice(0, MOBILE_SLOTS - 1);
+    .slice(0, MOBILE_SLOTS);
+};
 
-  return [
-    ...picked,
-    { key: "profile", path: profilePath, label: "Profile", icon: "profile" },
-  ];
+/**
+ * Everything this audience can reach that the four-slot bar could not hold.
+ *
+ * Derived from the DRAWER — the audience's complete destination list, which the
+ * desktop shell has always treated as exhaustive — rather than declared as a
+ * second list. That is the same decision mobileNav.js records for the tab sets,
+ * and for the same reason: the app once shipped a live Challenge feature no
+ * writer could reach because two navigation lists had drifted apart. A
+ * destination added to a preset's drawer now appears on the phone by itself.
+ *
+ * Matching is by PATH, not by key. The bar's "projects" is the drawer's
+ * `/dashboard?tab=projects` under a different name, and two entries for one URL
+ * in the same menu is a bug the user sees.
+ */
+const buildMobileOverflow = (drawer = [], bar = [], profileItem = null) => {
+  const inBar = new Set(bar.map((item) => item?.path).filter(Boolean));
+
+  // Profile is a destination like any other; it is simply not in every drawer,
+  // because the desktop drawer shows it as an identity card instead of a row.
+  const candidates = [...drawer, profileItem];
+
+  const seen = new Set();
+  return candidates.filter((item) => {
+    if (!item || item.divider || !item.path) return false;
+    if (inBar.has(item.path) || seen.has(item.path)) return false;
+    seen.add(item.path);
+    return true;
+  });
 };
 
 /**
@@ -105,12 +143,21 @@ export function buildNav({ user, profilePath, msgCount = 0 } = {}) {
     msgCount,
   });
 
+  /*
+   * The compact Profile entry. Presets name it in `mobileItems` when they want
+   * it in the bar; it is resolved here as well so that an audience which leaves
+   * it out of the bar still finds it under More rather than losing it.
+   */
+  const profileItem = { key: "profile", path: profilePath, label: "Profile", icon: "profile" };
+  const mobile = buildMobile(preset.rail, preset.mobileKeys, preset.mobileItems);
+
   return {
     // `primary` is the historical name for the rail; kept so existing call
     // sites and tests read the same.
     primary: preset.rail,
     drawer: preset.drawer,
-    mobile: buildMobile(preset.rail, preset.mobileKeys, profilePath, preset.mobileItems),
+    mobile,
+    mobileOverflow: buildMobileOverflow(preset.drawer, mobile, profileItem),
     collection: preset.collection ?? null,
 
     // Per-audience chrome. The topbar and drawer read these instead of

@@ -73,32 +73,48 @@ const isDataDerivedPath = (key) => key === "profile";
  *   tabs: Array<{key: string, path: string, label: string, glyph: string, exact: boolean, badge: number, fresh: boolean}>,
  * }}
  */
+/**
+ * One nav item, in the shape the chrome renders. Used for both the bar and the
+ * More sheet, so an overflow row cannot drift from a tab: same glyph
+ * resolution, same badge normalisation, same matching rules.
+ */
+const toDestination = (item) => ({
+  key: item.key,
+  path: item.path,
+  label: item.label,
+  glyph: glyphFor(item.icon),
+  /*
+   * Prefix matching is what keeps Messages selected on /messages/123, so it
+   * is the default. It is wrong for exactly one tab: Profile. Its path is a
+   * bare root segment ("/ada"), and the app's canonical PROJECT url is also
+   * two root segments ("/:projectHeading/:writerUsername") — so a prefix match
+   * would light the profile tab on someone else's project page whenever a
+   * heading happened to collide with the viewer's username. Matching it
+   * exactly costs nothing: the profile's own sub-views are query-string tabs
+   * ("?tab=bookmarks"), not path segments.
+   */
+  exact: Boolean(item.exact) || isDataDerivedPath(item.key),
+  // Normalised to a number here so the bar never has to ask whether an
+  // absent badge is undefined, null, 0 or "".
+  badge: Number(item.badge) > 0 ? Number(item.badge) : 0,
+  // `state: { startFresh: true }` — Create must open a new draft rather than
+  // resuming the last one, and that survives the trip through mobile.
+  fresh: Boolean(item.fresh),
+});
+
 export function buildMobileNav({ user, profilePath, msgCount = 0 } = {}) {
   const nav = buildNav({ user, profilePath, msgCount });
 
-  const tabs = nav.mobile.map((item) => ({
-    key: item.key,
-    path: item.path,
-    label: item.label,
-    glyph: glyphFor(item.icon),
-    /*
-     * Prefix matching is what keeps Messages selected on /messages/123, so it
-     * is the default. It is wrong for exactly one tab: Profile. Its path is a
-     * bare root segment ("/ada"), and the app's canonical PROJECT url is also
-     * two root segments ("/:projectHeading/:writerUsername") — so a prefix match
-     * would light the profile tab on someone else's project page whenever a
-     * heading happened to collide with the viewer's username. Matching it
-     * exactly costs nothing: the profile's own sub-views are query-string tabs
-     * ("?tab=bookmarks"), not path segments.
-     */
-    exact: Boolean(item.exact) || isDataDerivedPath(item.key),
-    // Normalised to a number here so the bar never has to ask whether an
-    // absent badge is undefined, null, 0 or "".
-    badge: Number(item.badge) > 0 ? Number(item.badge) : 0,
-    // `state: { startFresh: true }` — Create must open a new draft rather than
-    // resuming the last one, and that survives the trip through mobile.
-    fresh: Boolean(item.fresh),
-  }));
+  const tabs = nav.mobile.map(toDestination);
+
+  /*
+   * The destinations the four-slot bar could not hold. The desktop shell puts
+   * these in a drawer; the mobile app has no drawer, so before this existed
+   * they were simply unreachable on a phone — for a producer that was their own
+   * dashboard, the writer directory, Top Scripts, Search, Mandates and Saved
+   * Projects. The chrome renders a fifth "More" cell whenever this is non-empty.
+   */
+  const overflow = nav.mobileOverflow.map(toDestination);
 
   return {
     audience: nav.audience,
@@ -110,6 +126,7 @@ export function buildMobileNav({ user, profilePath, msgCount = 0 } = {}) {
     searchPath: findSearchPath(nav),
     searchPlaceholder: nav.searchPlaceholder,
     tabs,
+    overflow,
   };
 }
 
@@ -150,7 +167,12 @@ function findSearchPath(nav) {
  * specificity. That ordering is what makes `/dashboard?tab=projects` beat
  * `/dashboard` on the projects URL while `/dashboard` still wins on its own.
  *
- * @param {Array} tabs      from buildMobileNav
+ * Used for the bar AND for its More sheet: the sheet's rows light the same way
+ * a tab does, and the More cell itself is "current" exactly when one of them
+ * wins. Because the bar and the overflow hold disjoint paths (buildNav dedupes
+ * them), at most one of the two can claim any URL.
+ *
+ * @param {Array} tabs      from buildMobileNav — `tabs` or `overflow`
  * @param {string} pathname current location.pathname
  * @param {string} [search] current location.search
  * @returns {string|null}   the winning tab's key

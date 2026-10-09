@@ -18,7 +18,7 @@ import SignInMobile from "./SignInMobile";
  * the same two callbacks, because what is under test here is what SignInMobile
  * DOES with a Google result, not whether Google's iframe mounts.
  */
-vi.mock("../../../components/GoogleSignInButton", () => ({
+vi.mock("./ios/AuthGoogleSlot", () => ({
   default: ({ onSuccess, onError }) => (
     <div>
       <button type="button" onClick={() => onSuccess({ token: "t", name: "Mira", role: "creator" })}>

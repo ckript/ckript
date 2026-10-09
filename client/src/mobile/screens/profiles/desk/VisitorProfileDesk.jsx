@@ -94,7 +94,20 @@ const EMPTY_PANEL = Object.freeze({
  * to hand it the payload instead of the network. They are never passed in
  * production — MobileRoutes mounts the screen without them.
  */
-export default function VisitorProfileDesk({ user, previewData = null, previewCollection = null }) {
+/*
+ * `profileState` is supplied by AuthenticatedProfileRoute, which fetches above
+ * the owner/visitor split so that ownership is decided from the loaded profile
+ * rather than from the URL — see the note there. When it is absent (the preview
+ * fixtures and the render tests mount this screen directly) the screen falls
+ * back to fetching its own, so there is exactly one code path in production and
+ * the standalone mounts keep working.
+ */
+export default function VisitorProfileDesk({
+  user,
+  profileState: suppliedState = null,
+  previewData = null,
+  previewCollection = null,
+}) {
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -117,12 +130,13 @@ export default function VisitorProfileDesk({ user, previewData = null, previewCo
   }, [location.pathname, location.search, navigate]);
 
   const liveState = useAuthenticatedProfile({
-    profileKey: previewData ? "" : id,
+    profileKey: (previewData || suppliedState) ? "" : id,
     viewer: user,
     setViewer: setUser,
     onCanonicalPath: handleCanonicalPath,
   });
-  const profileState = previewData ? { ...liveState, ...previewData } : liveState;
+  const ownState = previewData ? { ...liveState, ...previewData } : liveState;
+  const profileState = suppliedState || ownState;
 
   const ready = profileState.status === AUTHENTICATED_PROFILE_STATUS.READY;
   const collectionLocation = readProfileCollectionLocation(searchParams, { own: false });

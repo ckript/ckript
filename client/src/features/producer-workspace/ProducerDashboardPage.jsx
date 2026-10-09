@@ -44,6 +44,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { AuthContext } from "../../context/AuthContext";
 import MeetingModal from "../../components/MeetingModal";
+import { describeCalendarFailure } from "../../utils/googleCalendarPopup";
 import { MatIcon } from "../../layouts/app-shell/navigation/icons.jsx";
 import { getScriptCanonicalPath } from "../../utils/scriptPath";
 import { getProfileCanonicalPath } from "../../utils/profilePath";
@@ -89,6 +90,7 @@ import LedgerDealRow from "./components/LedgerDealRow";
 import LedgerAside from "./components/LedgerAside";
 import LedgerDetailDrawer from "./components/LedgerDetailDrawer";
 import LedgerConfirmDialog from "./components/LedgerConfirmDialog";
+import ConsultationConfirmedDialog from "./components/ConsultationConfirmedDialog";
 import "./ProducerDashboardPage.css";
 
 /*
@@ -103,6 +105,7 @@ const TABS = [
   { key: "writers", label: "Writers", counted: true },
   { key: "finance", label: "Finance", counted: false },
   { key: "market", label: "Market", counted: false },
+  { key: "consultations", label: "Consultations", counted: true },
 ];
 
 const PER_PAGE_OPTIONS = [4, 6, 10];
@@ -167,6 +170,7 @@ const ProducerDashboardPage = () => {
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [purchaseRequests, setPurchaseRequests] = useState([]);
+  const [consultations, setConsultations] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [failures, setFailures] = useState({});
   const [revealedWriters, setRevealedWriters] = useState([]);
@@ -174,6 +178,7 @@ const ProducerDashboardPage = () => {
 
   // ── View state ────────────────────────────────────────────────────────────
   const [tab, setTab] = useState("deals");
+  const [consultationSubTab, setConsultationSubTab] = useState("action_required");
   const [statuses, setStatuses] = useState([]);
   const [sort, setSort] = useState("days");
   const [page, setPage] = useState(1);
@@ -189,6 +194,35 @@ const ProducerDashboardPage = () => {
   const [confirmError, setConfirmError] = useState("");
   const [meeting, setMeeting] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [actioningId, setActioningId] = useState(null);
+  const [rescheduleData, setRescheduleData] = useState(null); // { id: string, date: string }
+  const [needsCalendar, setNeedsCalendar] = useState(false);
+  const [calendarNotice, setCalendarNotice] = useState("");
+  const [confirmedConsultation, setConfirmedConsultation] = useState(null); // { variant, consultation }
+  const closeConfirmedConsultation = useCallback(() => setConfirmedConsultation(null), []);
+
+  /* "Connect Google Calendar" is a full-page trip to Google, which sends the browser back here with
+     ?calendar=connected|error&reason=…. Without reading it, a failed connection looked identical to
+     never having tried: the same "Connect your Google Calendar" banner on the next Accept. */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get("calendar");
+    if (!flag) return;
+    const reason = params.get("reason") || "";
+    if (flag === "connected") {
+      setNeedsCalendar(false);
+      setActionError("");
+      setCalendarNotice("Google Calendar connected. You can now accept consultations - a Google Meet link will be created and emailed to you and the writer.");
+      setUser((previous) => (previous ? { ...previous, googleCalendar: { ...(previous.googleCalendar || {}), connected: true } } : previous));
+    } else {
+      setNeedsCalendar(true);
+      setActionError(describeCalendarFailure(reason));
+    }
+    params.delete("calendar");
+    params.delete("reason");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [setUser]);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -199,6 +233,7 @@ const ProducerDashboardPage = () => {
       if (!next.failures.wallet) setWallet(next.wallet);
       if (!next.failures.transactions) setTransactions(next.transactions);
       if (!next.failures.requests) setPurchaseRequests(next.purchaseRequests);
+      if (!next.failures.consultations) setConsultations(next.consultations);
       if (!next.failures.watchlist) setWatchlist(next.watchlist);
       setFailures(next.failures || {});
       setDashFailed(Boolean(next.failures.dash));
@@ -341,6 +376,7 @@ const ProducerDashboardPage = () => {
 
   const tabCounts = {
     deals: allDeals.length,
+    consultations: consultations.filter(c => c.status === "awaiting_response").length,
     matched: matchedScripts.length,
     writers: revealedWriters.length,
     finance: transactions.length,
@@ -361,6 +397,76 @@ const ProducerDashboardPage = () => {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const closeMenus = () => setOpenMenu(null);
+
+  
+  const handleConnectCalendar = async () => {
+    try {
+      const returnTo = `${window.location.pathname}${window.location.search}`;
+      const { data } = await api.post("/google-calendar/auth-url", { returnTo });
+      window.location.href = data.url;
+    } catch (error) {
+      setActionError("Couldn't connect to Google Calendar at this time.");
+    }
+  };
+
+  const handleAcceptConsultation = async (id) => {
+    setActioningId(id + "_accept");
+    setNeedsCalendar(false);
+    setActionError("");
+    try {
+      const { data } = await api.post(`/consultations/${id}/accept`);
+      const accepted = consultations.find(c => c._id === id);
+      setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted", googleMeetUrl: data?.consultation?.googleMeetUrl || c.googleMeetUrl } : c));
+      setConfirmedConsultation({ variant: "accepted", consultation: { ...accepted, ...(data?.consultation || {}) } });
+    } catch (error) {
+      if (error?.response?.status === 428) {
+        setNeedsCalendar(true);
+      }
+      setActionError(error?.response?.data?.message || "Couldn't accept consultation.");
+    } finally {
+      setActioningId(null);
+    }
+  };
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleData?.date) return alert("Please select a new date and time.");
+    
+    if (!window.confirm("Are you sure you want to reschedule this consultation and send an email to the writer with the new time?")) {
+      return;
+    }
+    
+    const id = rescheduleData.id;
+    setActioningId(id + "_reschedule");
+    try {
+      const res = await api.post(`/consultations/${id}/reschedule`, { newStartISO: new Date(rescheduleData.date).toISOString() });
+      if (res.data) {
+        setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "accepted", scheduledStart: res.data.consultation.scheduledStart, scheduledEnd: res.data.consultation.scheduledEnd, googleMeetUrl: res.data.consultation.googleMeetUrl } : c));
+        setRescheduleData(null);
+          setConfirmedConsultation({ variant: "rescheduled", consultation: { ...consultations.find(c => c._id === id), ...res.data.consultation } });
+        }
+    } catch (err) {
+      console.error(err);
+      if (err?.response?.status === 428) {
+        setNeedsCalendar(true);
+        setActionError(err.response.data?.message || "Connect your Google Calendar to reschedule.");
+        setRescheduleData(null);
+      }
+      alert(err?.response?.data?.message || "Failed to reschedule.");
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  const handleRejectConsultation = async (id) => {
+    setActioningId(id + "_reject");
+    try {
+      await api.post(`/consultations/${id}/reject`, { reason: "Declined" });
+      setConsultations(prev => prev.map(c => c._id === id ? { ...c, status: "rejected" } : c));
+    } catch (error) {
+      setActionError(error?.response?.data?.message || "Couldn't reject consultation.");
+    } finally {
+      setActioningId(null);
+    }
+  };
 
   const handleRefresh = () => {
     closeMenus();
@@ -703,6 +809,155 @@ const ProducerDashboardPage = () => {
       )}
     </section>
   );
+
+  
+  const consultationsBlock = (() => {
+    const filteredConsultations = consultations.filter(c => {
+      if (consultationSubTab === "action_required") return c.status === "awaiting_response";
+      if (consultationSubTab === "upcoming") return c.status === "accepted" || c.status === "meeting_scheduled";
+      if (consultationSubTab === "completed") return c.status === "completed" || c.status === "meeting_completed" || c.status === "meeting_in_progress";
+      if (consultationSubTab === "declined") return c.status === "rejected" || c.status === "refund_pending" || c.status === "refunded";
+      return true;
+    });
+
+    const getCount = (id) => {
+      return consultations.filter(c => {
+        if (id === "action_required") return c.status === "awaiting_response";
+        if (id === "upcoming") return c.status === "accepted" || c.status === "meeting_scheduled";
+        if (id === "completed") return c.status === "completed" || c.status === "meeting_completed" || c.status === "meeting_in_progress";
+        if (id === "declined") return c.status === "rejected" || c.status === "refund_pending" || c.status === "refunded";
+        return false;
+      }).length;
+    };
+
+    return (
+    <div style={{ marginTop: "24px" }}>
+      <div className="ck-ledger__section-head">
+        <div>
+          <h2 className="ck-ledger__section-title">Consultations</h2>
+          <p className="ck-ledger__section-sub">Manage paid consultation requests from writers</p>
+        </div>
+      </div>
+      
+      <div style={{ marginTop: "16px", display: "flex", flexWrap: "wrap", gap: "10px", borderBottom: "1px solid #e2e8f0", paddingBottom: "16px" }}>
+        {[{id: "action_required", label: "Action Required"}, {id: "upcoming", label: "Upcoming"}, {id: "completed", label: "Completed"}, {id: "declined", label: "Declined"}].map(sub => {
+          const count = getCount(sub.id);
+          return (
+          <button
+            key={sub.id}
+            onClick={() => setConsultationSubTab(sub.id)}
+            style={{
+              padding: "6px 14px",
+              background: consultationSubTab === sub.id ? "var(--ck-dark)" : "transparent",
+              color: consultationSubTab === sub.id ? "white" : "var(--ck-muted)",
+              borderRadius: "20px",
+              border: consultationSubTab === sub.id ? "1px solid var(--ck-dark)" : "1px solid var(--ck-border)",
+              fontSize: "13px",
+              fontWeight: "600",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {sub.label} {count > 0 && `(${count})`}
+          </button>
+        )})}
+      </div>
+      
+      <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "24px" }}>
+        {calendarNotice && !actionError && (
+          <div style={{ gridColumn: "1 / -1", padding: "16px", background: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+            <p style={{ margin: 0, fontWeight: "500" }}>{calendarNotice}</p>
+            <button onClick={() => setCalendarNotice("")} style={{ padding: "6px 12px", background: "transparent", color: "#065f46", border: "1px solid #6ee7b7", borderRadius: "8px", cursor: "pointer", fontWeight: "600" }}>
+              Dismiss
+            </button>
+          </div>
+        )}
+        {actionError && (
+          <div style={{ gridColumn: "1 / -1", padding: "16px", background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p style={{ margin: 0, fontWeight: "500" }}>{actionError}</p>
+            {needsCalendar && (
+              <button onClick={handleConnectCalendar} style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", transition: "all 0.2s" }}>
+                Connect Google Calendar
+              </button>
+            )}
+          </div>
+        )}
+        
+        {filteredConsultations.length === 0 && <p className="ck-ledger__section-sub" style={{ gridColumn: "1 / -1", marginTop: "12px", textAlign: "center", padding: "40px", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>No {consultationSubTab.replace('_', ' ')} consultations found.</p>}
+        
+        {filteredConsultations.map(c => (
+          <div key={c._id} style={{ display: "flex", flexDirection: "column", padding: "20px", border: "1px solid var(--ck-border)", borderRadius: "16px", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", transition: "transform 0.2s, box-shadow 0.2s" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+              <h4 style={{ margin: 0, fontSize: "17px", fontWeight: "700", color: "var(--ck-dark)", lineHeight: "1.3" }}>
+                {c.topic} 
+                <span style={{ display: "block", fontSize: "13px", fontWeight: "500", color: "var(--ck-muted)", marginTop: "4px" }}>with {c.writer?.name || "Writer"}</span>
+              </h4>
+              <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px", background: c.status === 'accepted' ? '#ecfdf5' : c.status === 'rejected' ? '#fef2f2' : '#fefce8', color: c.status === 'accepted' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#d97706' }}>
+                {c.status.replace('_', ' ')}
+              </span>
+            </div>
+            
+            <div style={{ fontSize: "13px", color: "var(--ck-muted)", flexGrow: 1, display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Amount:</span> {c.amount / 100} {c.currency}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                              <span style={{ color: "var(--ck-dark)", fontWeight: "600" }}>Date:</span> {new Date(c.scheduledStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(c.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {c.isRescheduled && (
+                                <span style={{ padding: "2px 6px", borderRadius: "10px", fontSize: "9px", fontWeight: "700", textTransform: "uppercase", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a", marginLeft: "4px" }}>
+                                  Rescheduled
+                                </span>
+                              )}
+                            </div>
+              {c.additionalMessage && <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", color: "#475569", fontStyle: "italic", marginTop: "4px" }}>"{c.additionalMessage}"</div>}
+              {c.fileLink && <div style={{ marginTop: "4px" }}><a href={c.fileLink} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#0ea5e9", fontWeight: "600", textDecoration: "none" }}><MatIcon name="attachment" size={14} /> View Attached File</a></div>}
+              {c.googleMeetUrl && <div style={{ marginTop: "4px" }}><a href={c.googleMeetUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}>Join Google Meet &rarr;</a></div>}
+            </div>
+            
+            {rescheduleData?.id === c._id && (
+              <div style={{ marginTop: "auto", borderTop: "1px solid #f1f5f9", paddingTop: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--ck-dark)" }}>Select New Date & Time:</label>
+                <input 
+                  type="datetime-local" 
+                  value={rescheduleData.date} 
+                  onChange={e => setRescheduleData({ ...rescheduleData, date: e.target.value })}
+                  style={{ padding: "10px", borderRadius: "8px", border: "1px solid var(--ck-border)", outline: "none" }}
+                />
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={handleRescheduleSubmit} disabled={actioningId === c._id + "_reschedule"} style={{ flex: 1, padding: "8px", background: "var(--ck-dark)", color: "white", border: "none", borderRadius: "6px", fontWeight: "600", cursor: (actioningId === c._id + "_reschedule" ? "wait" : "pointer"), opacity: (actioningId === c._id + "_reschedule" ? 0.7 : 1), transition: "all 0.2s" }}>{actioningId === c._id + "_reschedule" ? "Confirming..." : "Confirm"}</button>
+                  <button onClick={() => setRescheduleData(null)} style={{ padding: "8px 16px", background: "transparent", color: "var(--ck-muted)", border: "none", cursor: "pointer", fontWeight: "600" }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            
+            {c.status === "awaiting_response" && rescheduleData?.id !== c._id && (
+              <div style={{ display: "flex", gap: "12px", marginTop: "auto", borderTop: "1px solid #f1f5f9", paddingTop: "16px" }}>
+                <button
+                  onClick={() => handleAcceptConsultation(c._id)}
+                  disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"}
+                  style={{ flex: 1, padding: "10px", background: "#10b981", color: "white", border: "none", borderRadius: "8px", fontWeight: "600", cursor: (actioningId ? "not-allowed" : "pointer"), transition: "all 0.2s", opacity: (actioningId ? 0.7 : 1) }}
+                >
+                  {actioningId === c._id + "_accept" ? "Approving..." : "Approve"}
+                </button>
+                <button
+                  onClick={() => handleRejectConsultation(c._id)}
+                  disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject"}
+                  style={{ flex: 1, padding: "10px", background: "white", color: "#ef4444", border: "1px solid #ef4444", borderRadius: "8px", fontWeight: "600", cursor: (actioningId ? "not-allowed" : "pointer"), transition: "all 0.2s", opacity: (actioningId ? 0.7 : 1) }}
+                >
+                  {actioningId === c._id + "_reject" ? "Rejecting..." : "Reject"}
+                </button>
+                <button
+                  onClick={() => setRescheduleData({ id: c._id, date: "" })}
+                  disabled={actioningId === c._id + "_accept" || actioningId === c._id + "_reject" || actioningId === c._id + "_reschedule"}
+                  style={{ flex: 1, padding: "10px", background: "white", color: "#64748b", border: "1px solid #cbd5e1", borderRadius: "8px", fontWeight: "600", cursor: (actioningId ? "not-allowed" : "pointer"), transition: "all 0.2s", opacity: (actioningId ? 0.7 : 1) }}
+                >
+                  {actioningId === c._id + "_reschedule" ? "..." : "Reschedule"}
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )})();
 
   const listBlock = (
     <>
@@ -1061,6 +1316,7 @@ const ProducerDashboardPage = () => {
               {tab === "writers" && writersBlock(true)}
               {tab === "finance" && moneyBlock(true)}
               {tab === "market" && marketBlock}
+                {tab === "consultations" && consultationsBlock}
               {(tab === "deals" || tab === "matched") && (
                 <>
                   {listBlock}
@@ -1101,6 +1357,13 @@ const ProducerDashboardPage = () => {
           onDownloadPdf={handleDownloadPdf}
         />
       )}
+
+      <ConsultationConfirmedDialog
+        open={Boolean(confirmedConsultation)}
+        variant={confirmedConsultation?.variant}
+        consultation={confirmedConsultation?.consultation}
+        onClose={closeConfirmedConsultation}
+      />
 
       <LedgerConfirmDialog
         open={Boolean(confirm)}

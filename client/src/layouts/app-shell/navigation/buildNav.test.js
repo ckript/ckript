@@ -100,6 +100,26 @@ describe("buildNav — industry (producer / director / investor)", () => {
     expect(paths(navFor("producer").drawer)).toContain("/profile/ada?tab=bookmarks");
   });
 
+  /*
+   * The bug: the compact bar was Discover / Featured / Messages / Profile, the
+   * mobile app has no drawer, and no industry mobile screen links to either of
+   * these. A producer on a phone could not open their own deal book or the
+   * writer directory from anywhere.
+   */
+  it.each([
+    ["/dashboard", "their own deal book"],
+    ["/writers", "the writer directory"],
+  ])("puts %s (%s) in the compact bar, not out of reach", (path) => {
+    expect(paths(navFor("producer").mobile)).toContain(path);
+  });
+
+  it("keeps the rest of the producer's destinations under More", () => {
+    const overflow = paths(navFor("producer").mobileOverflow);
+    for (const path of ["/featured", "/top-script", "/search", "/mandates", "/profile/ada"]) {
+      expect(overflow, `${path} missing from the More sheet`).toContain(path);
+    }
+  });
+
   it("offers the Watchlist as the drawer collection", () => {
     expect(navFor("producer").collection).toMatchObject({
       title: "Watchlist",
@@ -199,10 +219,56 @@ describe("buildNav — invariants across every role", () => {
     }
   });
 
-  it("always ends the mobile bar with Profile", () => {
-    for (const role of KNOWN_ROLES) {
-      const { mobile } = navFor(role);
-      expect(mobile.at(-1).key).toBe("profile");
+  /*
+   * Profile is no longer pinned to the last slot — the industry audience needs
+   * all four for destinations that have no other route on a phone. What must
+   * still hold is that it is never LOST: it is in the bar, or it is under More.
+   */
+  it.each(KNOWN_ROLES)("role %s can still reach Profile on a phone", (role) => {
+    const profilePath = "/profile/ada";
+    const nav = navFor(role, profilePath);
+    const reachable = [...nav.mobile, ...nav.mobileOverflow].map((item) => item.path);
+    expect(reachable).toContain(profilePath);
+  });
+
+  it.each(KNOWN_ROLES)("role %s fills at most the four slots the bar has", (role) => {
+    expect(navFor(role).mobile.length).toBeLessThanOrEqual(MOBILE_SLOTS);
+  });
+
+  /*
+   * THE PHONE INVARIANT.
+   *
+   * The mobile app has no drawer. The bar plus its More sheet is the whole of
+   * navigation there, so any drawer destination missing from both is a page
+   * that cannot be reached on a phone at all — which is exactly how /dashboard
+   * and /writers went missing for producers.
+   */
+  it.each(KNOWN_ROLES)("role %s can reach every drawer destination on a phone", (role) => {
+    const nav = navFor(role);
+    const reachable = new Set([...nav.mobile, ...nav.mobileOverflow].map((item) => item.path));
+
+    for (const item of items(nav.drawer)) {
+      expect(
+        reachable.has(item.path),
+        `"${item.label}" (${item.path}) is in the drawer but in neither the `
+        + "mobile bar nor its More sheet, so a phone cannot reach it",
+      ).toBe(true);
+    }
+  });
+
+  /* One URL, one row. The bar's "Projects" is the drawer's
+     /dashboard?tab=projects under another name. */
+  it.each(KNOWN_ROLES)("role %s never lists one destination twice on a phone", (role) => {
+    const nav = navFor(role);
+    const paths = [...nav.mobile, ...nav.mobileOverflow].map((item) => item.path);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it.each(KNOWN_ROLES)("role %s gets renderable overflow entries", (role) => {
+    for (const item of navFor(role).mobileOverflow) {
+      expect(item.path, `${item.key} has no path`).toBeTruthy();
+      expect(item.label, `${item.key} has no label`).toBeTruthy();
+      expect(SYMBOLS[item.icon], `icon "${item.icon}" is not in SYMBOLS`).toBeTruthy();
     }
   });
 

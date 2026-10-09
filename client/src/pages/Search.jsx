@@ -687,11 +687,12 @@ const Search = () => {
                               {user.name}
                             </h3>
                             <span
-                              className="text-[10px] font-bold uppercase tracking-wide px-2 py-[2px] rounded-full"
-                              style={{ color: dark ? "#93c5fd" : color, backgroundColor: dark ? "rgba(59,130,246,0.12)" : color + "10" }}
-                            >
-                              {user.role}
-                            </span>
+                                title={user.role === 'investor' ? 'Film Industry Professional' : undefined}
+                                className="text-[10px] font-bold uppercase tracking-wide px-2 py-[2px] rounded-full"
+                                style={{ color: dark ? "#93c5fd" : color, backgroundColor: dark ? "rgba(59,130,246,0.12)" : color + "10" }}
+                              >
+                                {user.role === 'investor' ? 'FIP' : user.role === 'creator' ? 'Writer' : user.role}
+                              </span>
                             {user.writerProfile?.wgaMember && (
                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full tracking-wide ${dark ? "text-blue-400 bg-blue-500/10" : "text-[#1e3a5f] bg-[#1e3a5f]/8"}`}>WGA</span>
                             )}

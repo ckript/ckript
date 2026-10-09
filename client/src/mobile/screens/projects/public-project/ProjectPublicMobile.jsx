@@ -1,9 +1,12 @@
-import { useMemo, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { useContext, useMemo, useState } from "react";
+import { Link, Navigate, useLocation, useParams } from "react-router-dom";
+import { AuthContext } from "../../../../context/AuthContext";
+import { getScriptCanonicalPath } from "../../../../utils/scriptPath";
 import { PUBLIC_PROJECT_STATUS, usePublicProject } from "../../../../pages/script-detail/usePublicProject";
 import { resolveMediaUrl } from "../../../../utils/mediaUrl";
 import PageHeader from "../../../components/app-bars/PageHeader";
 import Badge from "../../../components/badges/Badge";
+import Icon from "../../../components/Icon";
 import Button from "../../../components/buttons/Button";
 import InlineMessage from "../../../components/feedback/InlineMessage";
 import SkeletonGroup, { SkeletonShape } from "../../../components/feedback/Skeletons";
@@ -22,6 +25,12 @@ export default function ProjectPublicMobile({ previewData = undefined }) {
   const [trailerOpen, setTrailerOpen] = useState(false);
   const sections = useMemo(() => buildPublicProjectSections(project || {}), [project]);
   const loginTo = `/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
+
+  const { user } = useContext(AuthContext);
+
+  if (user && !previewData && project) {
+    return <Navigate to={getScriptCanonicalPath(project)} replace />;
+  }
 
   if (status === PUBLIC_PROJECT_STATUS.LOADING) {
     return (
@@ -66,8 +75,8 @@ export default function ProjectPublicMobile({ previewData = undefined }) {
       overlays={<TrailerDialog open={trailerOpen} onClose={() => setTrailerOpen(false)} project={project} />}
     >
       <article className="ckm-public-project__page">
-        <div className="ckm-public-project__cover">
-          {cover ? <img src={cover} alt="" /> : <span aria-hidden="true">CK</span>}
+        <div className={`ckm-public-project__cover ${!cover ? "ckm-public-project__cover--empty" : ""}`}>
+          {cover ? <img src={cover} alt="" /> : <Icon name="auto_awesome_mosaic" size={48} />}
         </div>
         <div className="ckm-public-project__hero">
           <p className="ckm-public-project__eyebrow">Public project preview</p>

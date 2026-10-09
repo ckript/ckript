@@ -35,6 +35,12 @@ export default function ListRow({
   action = null,
   chevron = false,
   to = null,
+  /*
+   * Router state for `to`. Without it `...rest` would put `state` on the <li>,
+   * where React Router never sees it — and the one destination that needs it,
+   * Create, would quietly resume the last draft instead of starting a new one.
+   */
+  state = undefined,
   href = null,
   onClick = null,
   current = false,
@@ -91,7 +97,7 @@ export default function ListRow({
       ? <button type="button" {...mainProps} disabled>{body}</button>
       : <span {...mainProps}>{body}</span>;
   } else if (to) {
-    main = <Link to={to} {...mainProps}>{body}</Link>;
+    main = <Link to={to} state={state} {...mainProps}>{body}</Link>;
   } else if (href) {
     main = <a href={href} {...mainProps}>{body}</a>;
   } else if (onClick) {

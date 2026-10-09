@@ -94,6 +94,11 @@ export const MOBILE_CSS_PREFIXES = Object.freeze({
     owner: "components/navigation/NavBar.css",
     note: "Role-aware bottom tab bar; destinations come from the desktop audience presets and the active tab from the URL. Supersedes ckm-bottomnav, whose two items were hard-coded and whose active tab was a constant prop.",
   },
+  "ckm-more": {
+    kind: SHARED_COMPONENT,
+    owner: "components/navigation/NavMoreSheet.css",
+    note: "The bottom bar's overflow sheet. The bar holds four destinations and the mobile app has no drawer, so whatever does not fit was not demoted but unreachable — which is how the industry audience lost /dashboard and /writers entirely. Rows come from the same audience preset the bar does.",
+  },
 
   // --- Phase 1 form family ----------------------------------------------
   "ckm-field": {

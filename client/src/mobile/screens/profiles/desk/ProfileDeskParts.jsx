@@ -537,7 +537,7 @@ export function DeskLeadProject({ project, to, flag = "" }) {
   return (
     <Link className="ckm-desk__lead" to={to}>
       <span className="ckm-desk__frame">
-        {cover ? <img src={cover} alt="" loading="lazy" decoding="async" /> : null}
+        {cover ? <img src={cover} alt="" loading="lazy" decoding="async" /> : <img src="/common-thumbnail.png" alt="" loading="lazy" decoding="async" />}
         <span className="ckm-desk__scrim" />
         {flag ? <span className="ckm-desk__flag">{flag}</span> : null}
         <span className="ckm-desk__caption">
@@ -558,7 +558,7 @@ export function DeskProjectTile({ project, to }) {
       <span className="ckm-desk__tile-frame">
         {cover
           ? <img src={cover} alt="" loading="lazy" decoding="async" />
-          : <span className="ckm-desk__tile-fallback" aria-hidden="true">{project.genre}</span>}
+          : <img src="/common-thumbnail.png" alt="" loading="lazy" decoding="async" />}
         {project.badge ? <span className="ckm-desk__tile-badge">{project.badge}</span> : null}
       </span>
       <span className="ckm-desk__tile-body">

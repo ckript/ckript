@@ -2,12 +2,12 @@ import { useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthContext } from "../../../context/AuthContext";
 import { resolvePostAuthPath } from "../../../routing/audienceTransitions";
-import GoogleSignInButton from "../../../components/GoogleSignInButton";
 import { COMPANY } from "../../../constants/company";
 import { AUTH_SHELL_MODE, readReturnPath, withReturnPath } from "./authChrome";
 import { isRetryable, REFUSAL } from "./authModel";
 import AuthSurface, { AuthHead, AuthNav } from "./ios/AuthSurface";
 import AuthButton from "./ios/AuthButton";
+import AuthGoogleSlot from "./ios/AuthGoogleSlot";
 import AuthOtpBoxes from "./ios/AuthOtpBoxes";
 import {
   AuthCard,
@@ -289,17 +289,14 @@ export default function SignInMobile() {
 
           <p className="ckm-auth__divider"><span>or</span></p>
 
-          {/* Google's own iframe, in a slot shaped like the row beside it. It
-              cannot be restyled, and replacing it would mean trading the
-              ID-token exchange the server implements for an OAuth code flow it
-              does not — see .ckm-auth__google. */}
-          <div className="ckm-auth__google">
-            <GoogleSignInButton
-              text="continue_with"
-              onSuccess={signIn.completeGoogle}
-              onError={signIn.failGoogle}
-            />
-          </div>
+          {/* Google's own button, sized to this column. It draws its own chrome
+              and cannot be restyled — see AuthGoogleSlot for what that costs
+              and why the alternative is a backend change. */}
+          <AuthGoogleSlot
+            text="continue_with"
+            onSuccess={signIn.completeGoogle}
+            onError={signIn.failGoogle}
+          />
         </div>
       </form>
 

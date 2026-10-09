@@ -91,8 +91,17 @@ import "./ProfileDesk.css";
  * only way to look at the same pixels twice is to hand it the payload instead
  * of the network. MobileRoutes mounts it without them.
  */
+/*
+ * `profileState` is supplied by AuthenticatedProfileRoute, which fetches above
+ * the owner/visitor split so that ownership is decided from the loaded profile
+ * rather than from the URL — see the note there. When it is absent (the preview
+ * fixtures and the render tests mount this screen directly) the screen falls
+ * back to fetching its own, so there is exactly one code path in production and
+ * the standalone mounts keep working.
+ */
 export default function OwnerProfileDesk({
   user,
+  profileState: suppliedState = null,
   previewData = null,
   previewCollection = null,
   previewInbox = null,
@@ -120,12 +129,15 @@ export default function OwnerProfileDesk({
     if (path && path !== location.pathname) navigate(`${path}${location.search}`, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
+  /* An empty key is how this file already disables the fetch for a preview; a
+     supplied state disables it for the same reason. */
   const liveState = useAuthenticatedProfile({
-    profileKey: previewData ? "" : profileKey,
+    profileKey: (previewData || suppliedState) ? "" : profileKey,
     viewer: user,
     onCanonicalPath: canonicalize,
   });
-  const profileState = previewData ? { ...liveState, ...previewData } : liveState;
+  const ownState = previewData ? { ...liveState, ...previewData } : liveState;
+  const profileState = suppliedState || ownState;
   const ready = profileState.status === AUTHENTICATED_PROFILE_STATUS.READY;
 
   const collectionLocation = readProfileCollectionLocation(searchParams, { own: true });

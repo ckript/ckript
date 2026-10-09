@@ -110,7 +110,7 @@ const content = (value) => (value && typeof value === "object" && "html" in valu
 
 export const masthead = () => `
 <tr>
-  <td class="px-mobile masthead" align="center" style="padding:32px 48px 26px;border-bottom:1px solid ${T.lineSoft};border-radius:16px 16px 0 0;">
+  <td class="px-mobile masthead" align="center" style="background: linear-gradient(#F8F6F0, #F8F6F0); padding:32px 48px 26px;border-bottom:1px solid ${T.lineSoft};border-radius:16px 16px 0 0;">
     <a href="${SITE_URL}" style="text-decoration:none;display:inline-block;">
       <img src="${BRAND_LOGO_URL}" alt="Ckript" width="280" style="display:block;width:280px;max-width:70%;height:auto;margin:0 auto;border:0;" />
     </a>
