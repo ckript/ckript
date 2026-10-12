@@ -10,6 +10,9 @@ import { useCurrency } from "../context/CurrencyContext";
 import CurrencyToggle from "./CurrencyToggle";
 import { getPlanPrice, WRITER_PLAN_KEY } from "../config/pricing";
 import { formatSubunits, formatCurrency } from "../utils/currency";
+import { formatBillingDate } from "../utils/planSubscriptionCheckout";
+import { useTaxConfig } from "../utils/taxes";
+import CheckoutStep from "./checkout/CheckoutStep";
 import useScrollLock from "../hooks/useScrollLock";
 import { useContext } from "react";
 import api from "../services/api";
@@ -137,6 +140,35 @@ const FOCUSABLE =
   'a[href],button:not(:disabled),textarea,input,select,[tabindex]:not([tabindex="-1"])';
 
 /* ── A writer tier card ───────────────────────────────────────── */
+/* The success screen for a plan checkout. A recurring checkout can end three ways: the first charge
+   went through (active), auto-renew was added to time already paid for (scheduled — the first charge
+   comes when that time runs out), or Razorpay is still confirming the first charge (activating). */
+function successCopy(verifyData, { label, activeTitle, activeBody, redirectTo }) {
+  const status = verifyData?.status;
+  const sub = verifyData?.user?.subscription || {};
+  if (status === "scheduled") {
+    const ends = formatBillingDate(sub.accessExpiresAt || verifyData?.startsAt);
+    return {
+      kicker: "Auto-renew on",
+      title: "You're set.",
+      body: `Your ${label} continues${ends ? ` until ${ends}` : ""} and renews automatically after that. You won't be charged until then.`,
+      redirectTo,
+    };
+  }
+  if (status === "activating") {
+    return {
+      kicker: "Payment received",
+      title: "Almost there.",
+      body: `Your ${label} switches on as soon as Razorpay confirms the first charge — usually within a minute. You can carry on; it activates on its own.`,
+      redirectTo,
+    };
+  }
+  const renews = verifyData?.recurring?.autoRenew
+    ? ` It renews automatically${verifyData?.recurring?.nextChargeAt ? ` on ${formatBillingDate(verifyData.recurring.nextChargeAt)}` : ""} — cancel anytime from Settings.`
+    : "";
+  return { kicker: "Access granted", title: activeTitle, body: `${activeBody}${renews}`, redirectTo };
+}
+
 function TierCard({ plan, state }) {
   const { variant, chip } = plan;
   const isGold = variant === "gold";
@@ -151,8 +183,11 @@ function TierCard({ plan, state }) {
     primaryLoading,
     primaryLock,
     onPrimary,
-    onRenew,
-    renewLoading,
+    renewNote,
+    secondaryLabel,
+    onSecondary,
+    secondaryLoading,
+    switchNote,
     daysUntilReset,
   } = state;
 
@@ -181,10 +216,11 @@ function TierCard({ plan, state }) {
         <b>{plan.price}</b>
         <span>{plan.per}</span>
       </div>
+      {plan.billingNote && <div className="pmx-billing-note">{plan.billingNote}</div>}
 
-      {active && daysLeft > 0 && (
+      {active && (renewNote || daysLeft > 0) && (
         <div className="pmx-pills">
-          <span className="pmx-pill pmx-pill--days">{daysLeft} days left</span>
+          <span className="pmx-pill pmx-pill--days">{renewNote || `${daysLeft} days left`}</span>
         </div>
       )}
 
@@ -232,11 +268,12 @@ function TierCard({ plan, state }) {
           {primaryLoading ? <Spinner /> : primaryLock ? <LockIcon /> : null}
           {primaryLabel}
         </button>
-        {onRenew && (
-          <button type="button" className="pmx-btn pmx-btn--ghost" onClick={onRenew} disabled={renewLoading}>
-            {renewLoading ? "Working…" : "Renew plan"}
+        {onSecondary && (
+          <button type="button" className="pmx-btn pmx-btn--ghost" onClick={onSecondary} disabled={secondaryLoading}>
+            {secondaryLoading ? "Working…" : secondaryLabel}
           </button>
         )}
+        {switchNote && <p className="pmx-switch-note">{switchNote}</p>}
       </div>
     </div>
   );
@@ -271,11 +308,19 @@ function PricingModalInner({ onClose, tab = "all" }) {
     return null;
   };
 
-  const pricedWriterPlans = WRITER_PLANS.map((p) => ({ 
-    ...p, 
+  // Paid plans are Razorpay Subscriptions: say so next to the price, not only in the terms.
+  const billingNote = isAnnual ? "Billed yearly · renews until you cancel" : "Billed monthly · renews until you cancel";
+  // Listed prices are PRE-TAX (₹399); taxes are added in the checkout step. The muted "+ taxes" hint is
+  // off by the founder's call and switchable without a release (SHOW_PLUS_TAXES_HINT).
+  const taxConfig = useTaxConfig();
+  const plusTaxes = taxConfig?.showPlusTaxesHint ? " + taxes" : "";
+
+  const pricedWriterPlans = WRITER_PLANS.map((p) => ({
+    ...p,
     price: priceLabelFor(p.key),
     originalPrice: getOriginalPrice(p.key, currency),
-    per: p.key === "free" ? p.per : (isAnnual ? "/ year" : "/ month")
+    per: p.key === "free" ? p.per : `${isAnnual ? "/ year" : "/ month"}${plusTaxes}`,
+    billingNote: p.key === "free" ? "" : billingNote,
   }));
   const getFipPriceLabel = () => {
     const basePrice = getPlanPrice("film_industry_professional", currency);
@@ -313,6 +358,10 @@ function PricingModalInner({ onClose, tab = "all" }) {
   // Unified success view: whichever plan was purchased, we land the new member
   // with one confident screen. null | { kicker, title, body, redirectTo }
   const [success, setSuccess] = useState(null);
+
+  // The checkout step (billing details + Subtotal · Taxes · Total) for the plan being bought, shown
+  // before the Razorpay sheet whenever taxes are being charged. null | { plan, isRenew }
+  const [checkoutPlan, setCheckoutPlan] = useState(null);
 
   // Upload usage for active writers, to draw the quota meter (same source the
   // dashboard uses). Fetched lazily while the modal is open.
@@ -380,47 +429,83 @@ function PricingModalInner({ onClose, tab = "all" }) {
   );
 
   // ── Writer plan checkout wiring ───────────────────────────────
-  const buyWriter = useCallback(
-    (tier, isRenew = false) => {
+  const runWriter = useCallback(
+    (tier, isRenew = false, extra = {}) => {
       writer.startCheckout({
+        ...extra,
         tier,
         isRenew,
         cycle: isAnnual ? "annual" : "monthly",
         signInRedirect: "/pricing",
         onRequireAuth: onClose, // never stack auth behind this modal
-        onSuccess: () =>
-          setSuccess({
-            kicker: "Access granted",
-            title: "You're all set.",
-            body: `Your ${WRITER_TIERS[tier].label} plan is active. Upload more scripts and reach the top sections from your dashboard.`,
-            redirectTo: "/dashboard",
-          }),
+        onSuccess: (verifyData) =>
+          setSuccess(
+            successCopy(verifyData, {
+              label: `${WRITER_TIERS[tier].label} plan`,
+              activeTitle: "You're all set.",
+              activeBody: `Your ${WRITER_TIERS[tier].label} plan is active. Upload more scripts and reach the top sections from your dashboard.`,
+              redirectTo: "/dashboard",
+            }),
+          ),
       });
     },
     [writer, onClose, isAnnual]
   );
 
+  // With taxes on, a signed-in writer goes through the checkout step first; otherwise straight to
+  // payment, exactly as before (the hook still handles signed-out and wrong-role visitors).
+  const buyWriter = useCallback(
+    (tier, isRenew = false) => {
+      if (taxConfig?.chargingEnabled && writer.user && writer.isWriter) {
+        setCheckoutPlan({ plan: tier, isRenew });
+        return;
+      }
+      runWriter(tier, isRenew);
+    },
+    [taxConfig, writer.user, writer.isWriter, runWriter]
+  );
+
   // ── FIP checkout wiring ───────────────────────────────────────
-  const buyFip = useCallback(
-    (isRenew = false) => {
+  const runFip = useCallback(
+    (isRenew = false, extra = {}) => {
       fip.startCheckout({
+        ...extra,
         isRenew,
         cycle: isAnnual ? "annual" : "monthly",
         signInRedirect: "/pricing",
         onRequireAuth: onClose,
         onAlreadyActive: () => goTo("/home"),
         onSuccess: (verifyData) =>
-          setSuccess({
-            kicker: "Access granted",
-            title: "You're in, Professional.",
-            body:
-              "Your Diamond Plan membership is now active. Writer contacts, direct messaging and meetings are unlocked.",
-            redirectTo: verifyData?.redirectTo || "/home",
-          }),
+          setSuccess(
+            successCopy(verifyData, {
+              label: "Diamond Plan",
+              activeTitle: "You're in, Professional.",
+              activeBody:
+                "Your Diamond Plan membership is now active. Writer contacts, direct messaging and meetings are unlocked.",
+              redirectTo: verifyData?.redirectTo || "/home",
+            }),
+          ),
       });
     },
     [fip, onClose, goTo, isAnnual]
   );
+
+  const buyFip = useCallback(
+    (isRenew = false) => {
+      if (taxConfig?.chargingEnabled && fip.user && fip.isEligibleRole && (isRenew || !fip.hasAccess)) {
+        setCheckoutPlan({ plan: "fip", isRenew });
+        return;
+      }
+      runFip(isRenew);
+    },
+    [taxConfig, fip.user, fip.isEligibleRole, fip.hasAccess, runFip]
+  );
+
+  const checkoutLabel = checkoutPlan
+    ? checkoutPlan.plan === "fip"
+      ? "Diamond Plan"
+      : `${WRITER_TIERS[checkoutPlan.plan]?.label || ""} plan`
+    : "";
 
   // ── Per-tier button derivation ────────────────────────────────
   // The free tier needs no payment, so its signed-out path opens the auth modal
@@ -459,9 +544,17 @@ function PricingModalInner({ onClose, tab = "all" }) {
       const loadingThis = writer.loading === key;
 
       if (active) {
+        // A plan on a Razorpay Subscription renews by itself; anything else lapses at expiry and is
+        // offered auto-renew (which starts when the paid time runs out — never a double charge).
+        const renewing = writer.billing.autoRenew && writer.billing.accessTier === meta.accessTier;
         return {
           active: true,
           daysLeft: writer.daysLeft,
+          renewNote: renewing
+            ? `Renews ${formatBillingDate(writer.billing.nextChargeAt || writer.billing.accessExpiresAt)}`
+            : writer.billing.accessExpiresAt
+              ? `Ends ${formatBillingDate(writer.billing.accessExpiresAt)}`
+              : "",
           quota: meta.quota,
           uploadedCount,
           daysUntilReset,
@@ -471,10 +564,19 @@ function PricingModalInner({ onClose, tab = "all" }) {
           primaryLoading: false,
           primaryLock: false,
           onPrimary: () => goTo("/dashboard"),
-          onRenew: () => buyWriter(key, true),
-          renewLoading: loadingThis,
+          secondaryLabel: renewing
+            ? "Manage billing"
+            : writer.billing.billingMode === "recurring"
+              ? "Resume auto-renew"
+              : "Turn on auto-renew",
+          onSecondary: renewing ? () => goTo("/profile?tab=settings") : () => buyWriter(key, true),
+          secondaryLoading: loadingThis,
         };
       }
+
+      // Holding the OTHER writer tier: buying this one starts it today and replaces that one.
+      const otherActive = key === "silver" ? writer.hasGoldAccess : writer.hasSilverAccess;
+      const otherLabel = key === "silver" ? WRITER_TIERS.gold.label : WRITER_TIERS.silver.label;
 
       return {
         active: false,
@@ -485,12 +587,17 @@ function PricingModalInner({ onClose, tab = "all" }) {
             ? "Checking session…"
             : wrongRole
               ? "For writers only"
-              : "Choose",
+              : otherActive
+                ? `Switch to ${meta.label}`
+                : "Choose",
         primaryKind: key === "gold" ? "accent" : "outline",
         primaryDisabled: wrongRole || checkingSession,
         primaryLoading: loadingThis,
         primaryLock: false,
         onPrimary: () => buyWriter(key, false),
+        switchNote: otherActive
+          ? `Starts today and replaces your ${otherLabel} plan. Days left on ${otherLabel} aren't carried over.`
+          : "",
       };
     },
     [writer, uploadedCount, daysUntilReset, goTo, buyWriter, onClose, openAuthModal]
@@ -508,16 +615,27 @@ function PricingModalInner({ onClose, tab = "all" }) {
       const dLeft = expiresAt
         ? Math.max(0, Math.ceil((new Date(expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))
         : null;
+      const renewing = fip.billing.autoRenew && fip.billing.accessTier === "film_industry_professional";
       return {
         active: true,
         daysLeft: dLeft,
+        renewNote: renewing
+          ? `Renews ${formatBillingDate(fip.billing.nextChargeAt || expiresAt)}`
+          : expiresAt
+            ? `Ends ${formatBillingDate(expiresAt)}`
+            : "",
         label: "Go to dashboard",
         kind: "active",
         disabled: false,
         loading: false,
         lock: false,
         onClick: () => goTo("/home"),
-        onRenew: () => buyFip(true),
+        secondaryLabel: renewing
+          ? "Manage billing"
+          : fip.billing.billingMode === "recurring"
+            ? "Resume auto-renew"
+            : "Turn on auto-renew",
+        onSecondary: renewing ? () => goTo("/profile?tab=settings") : () => buyFip(true),
       };
     }
     if (fip.authLoading) {
@@ -640,6 +758,30 @@ function PricingModalInner({ onClose, tab = "all" }) {
               Continue
             </button>
           </div>
+        ) : checkoutPlan ? (
+          <div className="pmx-checkout">
+            <CheckoutStep
+              title={`${checkoutLabel} · ${isAnnual ? "yearly" : "monthly"}`}
+              subtitle={`${billingNote}. Taxes are added at checkout.`}
+              quoteKey={`${checkoutPlan.plan}-${isAnnual ? "annual" : "monthly"}-${currency}`}
+              fetchQuote={async () => {
+                const { data } = await api.post("/payment/plans/quote", {
+                  plan: checkoutPlan.plan,
+                  cycle: isAnnual ? "annual" : "monthly",
+                  currency,
+                });
+                return data?.breakdown;
+              }}
+              onPay={({ billing, saveBilling }) =>
+                checkoutPlan.plan === "fip"
+                  ? runFip(checkoutPlan.isRenew, { billing, saveBilling })
+                  : runWriter(checkoutPlan.plan, checkoutPlan.isRenew, { billing, saveBilling })}
+              onBack={() => setCheckoutPlan(null)}
+              backLabel="Back to plans"
+              busy={busy}
+              error={checkoutPlan.plan === "fip" ? fip.error : writer.error}
+            />
+          </div>
         ) : (
           <>
             {(effectiveTab === "all" || effectiveTab === "writer") && (
@@ -746,12 +888,13 @@ function PricingModalInner({ onClose, tab = "all" }) {
                           </s>
                         )}
                         <b>{isFree ? "₹0" : fipPriceLabel}</b>
-                        <span>{isFree ? "/ month" : (isAnnual ? "/ year" : "/ month")}</span>
+                        <span>{isFree ? "/ month" : `${isAnnual ? "/ year" : "/ month"}${plusTaxes}`}</span>
                       </div>
-                      
-                      {!isFree && fipState.active && fipState.daysLeft > 0 && (
+                      {!isFree && <div className="pmx-billing-note">{billingNote}</div>}
+
+                      {!isFree && fipState.active && (fipState.renewNote || fipState.daysLeft > 0) && (
                         <div className="pmx-pills">
-                          <span className="pmx-pill pmx-pill--days">{fipState.daysLeft} days left</span>
+                          <span className="pmx-pill pmx-pill--days">{fipState.renewNote || `${fipState.daysLeft} days left`}</span>
                         </div>
                       )}
                       
@@ -781,9 +924,9 @@ function PricingModalInner({ onClose, tab = "all" }) {
                               {fipState.loading ? <Spinner /> : fipState.lock ? <LockIcon /> : null}
                               {fipState.label === "Upgrade to Diamond Plan" ? "For industry pros" : fipState.label}
                             </button>
-                            {fipState.onRenew && (
-                              <button type="button" className="pmx-btn pmx-btn--ghost" onClick={fipState.onRenew} disabled={Boolean(fipState.loading)}>
-                                {fipState.loading ? "Working…" : "Renew plan"}
+                            {fipState.onSecondary && (
+                              <button type="button" className="pmx-btn pmx-btn--ghost" onClick={fipState.onSecondary} disabled={Boolean(fip.loading)}>
+                                {fip.loading ? "Working…" : fipState.secondaryLabel}
                               </button>
                             )}
                           </>

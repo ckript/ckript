@@ -15,12 +15,12 @@ const pricing = getPurchasePricing(240000);
 describe("buildAmountRows", () => {
   it("puts the total last and marks it as the total", () => {
     const rows = buildAmountRows(pricing);
-    expect(rows.map((row) => row.key)).toEqual(["base", "commission", "total"]);
+    expect(rows.map((row) => row.key)).toEqual(["base", "fee", "total"]);
     expect(rows[2].tone).toBe("total");
   });
 
   it("names the commission with the rate the pricing actually used", () => {
-    expect(buildAmountRows({ ...pricing, platformTaxPercent: 8 })[1].label).toContain("8%");
+    expect(buildAmountRows({ ...pricing, platformFeePercent: 8 })[1].label).toContain("8%");
   });
 });
 

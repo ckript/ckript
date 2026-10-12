@@ -615,44 +615,6 @@ export const ScriptTable = ({ scripts, isDark, actions, showScore, showCreator =
     </div>
 );
 
-// ─── Transaction Table ───
-export const TransactionTable = ({ transactions, isDark }) => (
-    <div className={`rounded-2xl border overflow-hidden ${isDark ? "bg-[#1a1616] border-[#2e2828]" : "bg-white border-gray-200/60 shadow-sm"}`}>
-        <div className="overflow-x-auto">
-            <table className="w-full">
-                <thead>
-                    <tr className={isDark ? "bg-[#221d1d]" : "bg-gray-50"}>
-                        {["User", "Type", "Amount", "Status", "Description", "Transaction / Pay ID", "Date"].map((h) => (
-                            <th key={h} className={`text-left px-5 py-3 text-xs font-bold uppercase tracking-wider ${isDark ? "text-gray-400" : "text-gray-500"}`}>{h}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody className={`divide-y ${isDark ? "divide-[#2e2828]" : "divide-gray-100"}`}>
-                    {transactions.map((t) => (
-                        <tr key={t._id} className={`transition-colors ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/50"}`}>
-                            <td className={`px-5 py-3.5 text-sm font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{t.user?.name || "—"}</td>
-                            <td className="px-5 py-3.5"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${t.type === "credit" || t.type === "payment" ? "bg-emerald-100 text-emerald-700" : t.type === "debit" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`}>{t.type}</span></td>
-                            <td className={`px-5 py-3.5 text-sm font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>{formatCurrency(t.amount || 0, t.currency || "INR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="px-5 py-3.5"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${t.status === "completed" ? "bg-emerald-100 text-emerald-700" : t.status === "pending" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{t.status}</span></td>
-                            <td className={`px-5 py-3.5 text-sm max-w-[200px] truncate ${isDark ? "text-gray-400" : "text-gray-600"}`}>{t.description}</td>
-                            <td className="px-5 py-3.5">
-                                <div className={`text-xs leading-5 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                                    <p className="break-all"><span className={`font-semibold ${isDark ? "text-gray-300" : "text-gray-700"}`}>Txn:</span> {getTransactionIdLabel(t) || "-"}</p>
-                                    <p className="break-all"><span className={`font-semibold ${isDark ? "text-gray-300" : "text-gray-700"}`}>Pay:</span> {getPaymentIdLabel(t) || "-"}</p>
-                                </div>
-                            </td>
-                            <td className={`px-5 py-3.5 text-sm ${isDark ? "text-gray-500" : "text-gray-500"}`}>{new Date(t.createdAt).toLocaleDateString()}</td>
-                        </tr>
-                    ))}
-                    {transactions.length === 0 && (
-                        <tr><td colSpan={7} className={`px-5 py-10 text-center text-sm ${isDark ? "text-gray-500" : "text-gray-400"}`}>No transactions found</td></tr>
-                    )}
-                </tbody>
-            </table>
-        </div>
-    </div>
-);
-
 // ─── Score Modal ───
 export const ScoreModal = ({ script, isDark, onClose, onSave }) => {
     const getInitialScores = (currentScript) => ({

@@ -3,6 +3,7 @@ import {
   challengeRegistrationMode,
   createChallengeRegistrationOrder,
   emptyChallengeRegistration,
+  fetchChallengeRegistrationQuote,
   emptyExternalRegistration,
   fetchRegistrationInvoice,
   forgetChallengeRegistrationPayment,
@@ -18,6 +19,7 @@ import {
   validateExternalRegistration,
   verifyChallengeRegistrationPayment,
 } from "./challengeRegistration";
+import { fetchTaxConfig } from "../../utils/taxes";
 
 const userIdOf = (user) => String(user?._id || user?.id || user?.sid || "");
 
@@ -38,6 +40,8 @@ export default function useChallengeRegistration({ competition = null, user = nu
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [pendingNonce, setPendingNonce] = useState(0);
+  /* The server's price for the entry, taxes included, while taxes are being charged. */
+  const [breakdown, setBreakdown] = useState(null);
 
   const [externalLoading, setExternalLoading] = useState(false);
   const [externalRequest, setExternalRequest] = useState(null);
@@ -54,6 +58,17 @@ export default function useChallengeRegistration({ competition = null, user = nu
     return () => { mounted.current = false; };
   }, []);
   const commit = useCallback((fn) => { if (mounted.current) fn(); }, []);
+
+  useEffect(() => {
+    if (!enabled || !competitionId || !paid) return undefined;
+    let alive = true;
+    fetchTaxConfig()
+      .then((config) => (config?.chargingEnabled
+        ? fetchChallengeRegistrationQuote({ competitionId, currency, country: form.country })
+        : null))
+      .then((result) => { if (alive && mounted.current) setBreakdown(result?.ok ? result.data?.breakdown || null : null); });
+    return () => { alive = false; };
+  }, [enabled, competitionId, paid, currency, form.country]);
 
   const pendingPayment = useMemo(
     () => (enabled && competitionId && userId ? readChallengeRegistrationPayment({ competitionId, userId }) : null),
@@ -277,6 +292,7 @@ export default function useChallengeRegistration({ competition = null, user = nu
     acceptRules,
     acceptCopyright,
     currency,
+    breakdown,
     errors,
     serverError,
     processing,

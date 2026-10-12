@@ -4,6 +4,7 @@ import { AuthContext } from "../context/AuthContext";
 import { useAuthModal } from "../context/AuthModalContext";
 import { useCurrency } from "../context/CurrencyContext";
 import api from "../services/api";
+import { mergeSessionUser, openRecurringPlanCheckout, recurringStateOf } from "../utils/planSubscriptionCheckout";
 import {
   hasActiveFilmIndustryProfessionalAccess,
   isFilmIndustryProfessionalRole,
@@ -62,6 +63,8 @@ export function useFilmIndustryProfessionalCheckout() {
 
   const isEligibleRole = isFilmIndustryProfessionalRole(user);
   const hasAccess = hasActiveFilmIndustryProfessionalAccess(user) && (user?.subscription?.plan === "pro" || user?.subscription?.plan === "diamond");
+  // Whether the active plan renews by itself (Razorpay Subscription) or lapses at expiry.
+  const billing = recurringStateOf(user);
 
   const reset = useCallback(() => {
     setError("");
@@ -89,6 +92,8 @@ export function useFilmIndustryProfessionalCheckout() {
       onSuccess,
       onAlreadyActive,
       onRequireAuth,
+      billing = null,
+      saveBilling = false,
     } = {}) => {
       setError("");
       setMessage("");
@@ -125,9 +130,34 @@ export function useFilmIndustryProfessionalCheckout() {
           return;
         }
 
+        // Recurring first: a Razorpay Subscription that renews until cancelled. The one-time order
+        // below is only the fallback for when the server can't take a mandate right now.
+        const recurring = await openRecurringPlanCheckout({
+          plan: "fip",
+          accessTier: "film_industry_professional",
+          cycle,
+          currency: currency || "INR",
+          user,
+          returnTo,
+          billing,
+          saveBilling,
+          onVerifying: () => setMessage("Verifying payment..."),
+        });
+        if (recurring.outcome === "dismissed") {
+          setLoading(false);
+          return;
+        }
+        if (recurring.outcome === "success") {
+          mergeSessionUser(recurring.data?.user, setUser);
+          setMessage(recurring.data?.message || "Payment successful!");
+          if (typeof onSuccess === "function") onSuccess(recurring.data);
+          return;
+        }
+        if (recurring.message) setMessage(recurring.message);
+
         const { data: orderData } = await api.post(
           "/payment/film-industry-professional/create-razorpay-order",
-          { currency: currency || "INR", cycle }
+          { currency: currency || "INR", cycle, ...(billing ? { billing, saveBilling } : {}) }
         );
 
         const options = {
@@ -191,7 +221,7 @@ export function useFilmIndustryProfessionalCheckout() {
         setLoading(false);
       }
     },
-    [authLoading, user, isEligibleRole, hasAccess, openAuthModal, setUser]
+    [authLoading, user, isEligibleRole, hasAccess, openAuthModal, setUser, currency]
   );
 
   return {
@@ -199,6 +229,7 @@ export function useFilmIndustryProfessionalCheckout() {
     authLoading,
     isEligibleRole,
     hasAccess,
+    billing,
     loading,
     error,
     message,

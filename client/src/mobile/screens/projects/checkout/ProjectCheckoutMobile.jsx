@@ -58,6 +58,7 @@ import {
 } from "./checkoutChrome";
 import {
   AMOUNT_NOTE,
+  AMOUNT_NOTE_TAXED,
   buildAcceptanceRows,
   buildAmountRows,
   buildRightsRows,
@@ -68,6 +69,8 @@ import {
   EXCLUSIVITY_WARNING,
 } from "./checkoutModel";
 import "./ProjectCheckoutMobile.css";
+import BillingSection from "../../../../components/checkout/BillingSection";
+import useBillingDetails from "../../../../components/checkout/useBillingDetails";
 
 const has = (value) => String(value ?? "").trim().length > 0;
 
@@ -121,6 +124,8 @@ export default function ProjectCheckoutMobile({
     notify,
     enabled: !previewData,
   });
+  // Billing details address the tax invoice; asked for only while taxes are being charged.
+  const billingDetails = useBillingDetails({ enabled: !previewData });
 
   const [documentError, setDocumentError] = useState("");
 
@@ -208,14 +213,20 @@ export default function ProjectCheckoutMobile({
   }
 
   const { standing, pricing, success, pendingCharge, recovering } = checkout;
-  const amountRows = buildAmountRows(pricing);
+  const amountRows = buildAmountRows(pricing, checkout.breakdown);
   const rightsRows = buildRightsRows(script);
   const termsPanels = buildTermsPanels(script);
   const acceptanceRows = buildAcceptanceRows(script);
   const chargeLine = describeChargeLine(checkout.lastCharge);
   const alternative = describeAlternative({ standing, projectPath });
-  const payControl = describePayControl({ standing, processing: checkout.processing, recovering });
+  const payControl = describePayControl({ standing, processing: checkout.processing, recovering, breakdown: checkout.breakdown });
   const showForm = standing.canPay && !success;
+  const askBilling = billingDetails.chargingEnabled && checkout.requiresPayment && showForm;
+  const startPayment = () => {
+    if (!askBilling) return checkout.pay();
+    const prepared = billingDetails.prepare();
+    return prepared ? checkout.pay(prepared) : false;
+  };
 
   const footer = success ? null : (
     <div className="ckm-checkout__footer">
@@ -239,7 +250,7 @@ export default function ProjectCheckoutMobile({
           fullWidth
           pending={payControl.pending}
           pendingLabel={payControl.label}
-          onClick={checkout.pay}
+          onClick={startPayment}
         >
           {payControl.label}
         </Button>
@@ -330,7 +341,8 @@ export default function ProjectCheckoutMobile({
                 </div>
               ))}
             </dl>
-            <p className="ckm-checkout__note">{AMOUNT_NOTE}</p>
+            <p className="ckm-checkout__note">{checkout.breakdown?.taxMinor > 0 ? AMOUNT_NOTE_TAXED : AMOUNT_NOTE}</p>
+            {askBilling && <BillingSection details={billingDetails} />}
             {has(chargeLine) && <p className="ckm-checkout__note">{chargeLine}</p>}
             {standing.id === CHECKOUT_STANDING.PAYABLE && has(standing.window?.note) && (
               <p className="ckm-checkout__deadline">{standing.window.note}</p>

@@ -383,9 +383,9 @@ export default function UploadHarness() {
       legalAgreement: SCRIPT_UPLOAD_TERMS_TEXT,
       publishInvoiceRows: [
         { item: "Script Access Fee", detail: "Premium reader purchase model", amount: "₹15.00" },
-        { item: "Platform Commission (5%)", detail: "Added to the script fee at buyer checkout", amount: "₹0.75" },
-        { item: "Buyer Checkout Total", detail: "Script fee plus platform commission", amount: "₹15.75" },
-        { item: "Projected Writer Payout", detail: "Writer receives the full script access fee", amount: "₹15.00" },
+        { item: "Platform fee (5%)", detail: "Paid by the buyer on top of the script price", amount: "₹0.75" },
+        { item: "Buyer pays (before taxes)", detail: "Script price plus platform fee; taxes of 18% are added at the buyer's checkout", amount: "₹15.75" },
+        { item: "Projected Writer Payout", detail: "You receive the full script price — the fee and taxes never reduce it", amount: "₹15.00" },
       ],
     },
   }), [

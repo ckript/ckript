@@ -563,7 +563,7 @@
         "items": [
           "​ Billing name",
           "​ Billing address",
-          "​ GST information (where applicable)",
+          "​ Business tax ID (where provided)",
           "​ Payment reference",
           "​ Transaction identifiers",
           "​ Invoice information",

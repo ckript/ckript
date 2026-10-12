@@ -71,11 +71,20 @@ export const recordPayment = async ({
   occurredAt,
   source = "",
   metadata = {},
+  tax = null,
+  creatorPayoutMinor = 0,
+  gatewayFeeMinor = 0,
+  gatewayTaxMinor = 0,
 }) => {
   if (!kind || !user) return null;
   return write({
     kind,
     settlement: "paid",
+    // Taxes are part of what was captured; the snapshot says exactly how much (none when absent).
+    ...(tax ? { tax, taxMinor: toMinor(tax?.totals?.taxMinor) } : {}),
+    creatorPayoutMinor: toMinor(creatorPayoutMinor),
+    gatewayFeeMinor: toMinor(gatewayFeeMinor),
+    gatewayTaxMinor: toMinor(gatewayTaxMinor),
     user,
     amountMinor: toMinor(amountMinor),
     currency: String(currency || "INR").toUpperCase(),
@@ -146,9 +155,15 @@ export const recordReversal = async ({
   providerPaymentId,
   source = "",
   occurredAt,
+  taxMinor = null,
+  creatorPayoutMinor = 0,
 }) => {
   if (!original?._id) return null;
   const magnitude = Math.abs(toMinor(amountMinor ?? original.amountMinor));
+  // The taxes reversed: given by the credit note when there is one, otherwise pro rata of the original.
+  const reversedTax = taxMinor !== null
+    ? Math.abs(toMinor(taxMinor))
+    : (original.amountMinor ? Math.round(Math.abs(toMinor(original.taxMinor)) * magnitude / Math.abs(original.amountMinor)) : 0);
   return write({
     kind: original.kind,
     settlement: "reversed",
@@ -163,6 +178,8 @@ export const recordReversal = async ({
     subjectId: original.subjectId,
     label: original.label,
     reversalOf: original._id,
+    taxMinor: -reversedTax,
+    creatorPayoutMinor: -Math.abs(toMinor(creatorPayoutMinor)),
     occurredAt: occurredAt || new Date(),
     source,
     metadata: reason ? { reason } : {},

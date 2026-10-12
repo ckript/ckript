@@ -100,7 +100,7 @@ describe("ScriptPaymentPage", () => {
     const el = await mount();
 
     expect(el.textContent).toContain("2,52,000");
-    expect(el.textContent).toContain("Platform Commission (5%)");
+    expect(el.textContent).toContain("Platform fee (5%)");
     expect(el.textContent).toContain("Pay by");
   });
 

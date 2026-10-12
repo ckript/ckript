@@ -25,6 +25,8 @@ import {
   assertAcceptances,
   confirmFreeAccess,
   createPurchaseOrder,
+  fetchPurchaseQuote,
+  fetchTaxConfigForCheckout,
   describeCheckoutStanding,
   describeOrderCharge,
   emptyAcceptances,
@@ -69,6 +71,9 @@ export function useProjectCheckout({
   const [lastCharge, setLastCharge] = useState(null);
   /* The server's own pricing, which replaces this client's estimate the moment an order exists. */
   const [orderPricing, setOrderPricing] = useState(null);
+  /* The server's breakdown — price, platform fee, Taxes (18%), total — which is what the screen shows
+     and what the pay button states. The client never computes tax. */
+  const [breakdown, setBreakdown] = useState(null);
   const [documentBusy, setDocumentBusy] = useState("");
   const [recovering, setRecovering] = useState(false);
   /*
@@ -122,6 +127,16 @@ export function useProjectCheckout({
 
   const customTerms = readCustomWriterTerms(script || {});
   const requiresPayment = standing.pricing.totalAmount > 0;
+
+  useEffect(() => {
+    if (!enabled || !requiresPayment || !standing.canPay || !scriptId) return undefined;
+    let alive = true;
+    // Only while taxes are being charged: with them off the estimate above is already exact.
+    fetchTaxConfigForCheckout()
+      .then((config) => (config?.chargingEnabled ? fetchPurchaseQuote({ scriptId, currency }) : null))
+      .then((b) => { if (alive && mountedRef.current && b) setBreakdown(b); });
+    return () => { alive = false; };
+  }, [enabled, requiresPayment, standing.canPay, scriptId, currency]);
 
   /*
    * Load the gateway as soon as it is known to be needed, not when the button is pressed.
@@ -208,7 +223,9 @@ export function useProjectCheckout({
 
   /* ── Pay ──────────────────────────────────────────────────────────────────── */
 
-  const pay = useCallback(async () => {
+  // `billing` / `saveBilling` come from the billing-details section when taxes are being charged. A
+  // click event passed straight in carries neither, which is the taxes-off path.
+  const pay = useCallback(async ({ billing = null, saveBilling = false } = {}) => {
     if (!scriptId || processing || !standing.canPay) return false;
 
     setError("");
@@ -241,7 +258,7 @@ export function useProjectCheckout({
       }
     }
 
-    const order = await createPurchaseOrder({ scriptId, acceptances, script: script || {}, currency });
+    const order = await createPurchaseOrder({ scriptId, acceptances, script: script || {}, currency, billing, saveBilling });
     if (!order.ok) {
       // A 409/410 here means the standing on screen is out of date — someone else bought it, or
       // the window closed while this page was open. Re-reading the project is what corrects the
@@ -264,6 +281,7 @@ export function useProjectCheckout({
     commit(() => {
       setLastCharge(describeOrderCharge(order.data));
       setOrderPricing(readOrderPricing(order.data, standing.pricing.baseAmount));
+      if (order.data?.breakdown) setBreakdown(order.data.breakdown);
     });
 
     return new Promise((resolve) => {
@@ -367,6 +385,7 @@ export function useProjectCheckout({
     capabilities,
     standing,
     pricing: orderPricing || standing.pricing,
+    breakdown,
     paymentWindow: standing.window,
     customTerms,
     requiresPayment,

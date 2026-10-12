@@ -8,11 +8,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { io } from "socket.io-client";
 import { jsPDF } from "jspdf";
 import api from "../services/api";
+import CheckoutModal from "../components/checkout/CheckoutModal";
+import { useTaxConfig } from "../utils/taxes";
 import { AuthContext } from "../context/AuthContext";
 import { useAuthModal } from "../context/AuthModalContext";
 import { useDarkMode } from "../context/DarkModeContext";
 import { Film, BadgeCheck, MessageCircle } from "lucide-react";
-import RazorpayScriptPayment from "../components/RazorpayScriptPayment";
 import SocialShareButton from "../components/SocialShareButton";
 import ScreenplayReadOnly from "../components/ScreenplayReadOnly";
 import ScreenplayPdfViewer from "../components/ScreenplayPdfViewer";
@@ -304,20 +305,29 @@ const ScriptDetail = () => {
   const meetingsUsed = meetingStats?.meetingsUsed ?? getScheduledMeetingsCount(user);
   const meetingsBlocked = viewerHasProAccess && !meetingAlreadyScheduled && remainingMeetings <= 0;
 
-  const trailerPriceMap = {
-    "30-480": { inr: 399, usd: 5 },
-    "30-720": { inr: 499, usd: 6 },
-    "60-480": { inr: 539, usd: 6 },
-    "60-720": { inr: 649, usd: 7 },
-    "90-480": { inr: 549, usd: 6.3 },
-    "90-720": { inr: 799, usd: 9 },
-  };
-  const trailerPriceKey = `${trailerDurationChoice}-${trailerQualityChoice}`;
-  const trailerPrice = trailerPriceMap[trailerPriceKey] || { inr: 0, usd: 0 };
-  const selectedTrailerAmount = trailerCurrencyChoice === "usd" ? trailerPrice.usd : trailerPrice.inr;
-  const selectedTrailerPrefix = trailerCurrencyChoice === "usd" ? "$" : "INR";
-  const formatTrailerAmount = (amount) => Number.isInteger(amount) ? String(amount) : String(amount).replace(/\.0+$/, "");
   const trailerCurrencyLabel = trailerCurrencyChoice === "usd" ? "USD" : trailerCurrencyChoice === "inr" ? "INR" : "";
+  // The package price comes from the SERVER (the same table the order is priced from) — this page used
+  // to keep its own copy of it and send the amount back with the payment.
+  const [trailerQuote, setTrailerQuote] = useState(null);
+  const [trailerCheckoutOpen, setTrailerCheckoutOpen] = useState(false);
+  const taxConfig = useTaxConfig();
+  useEffect(() => {
+    if (!showTrailerPaymentModal || !script?._id) return undefined;
+    let alive = true;
+    api.post(`/scripts/${script._id}/request-ai-trailer/quote`, {
+      duration: trailerDurationChoice,
+      quality: trailerQualityChoice,
+      format: trailerFormatChoice,
+      currency: trailerCurrencyLabel || "INR",
+    })
+      .then(({ data }) => { if (alive) setTrailerQuote(data || null); })
+      .catch(() => { if (alive) setTrailerQuote(null); });
+    return () => { alive = false; };
+  }, [showTrailerPaymentModal, script?._id, trailerDurationChoice, trailerQualityChoice, trailerFormatChoice, trailerCurrencyLabel]);
+  // Listed price, pre-tax (taxes are added in the checkout step).
+  const selectedTrailerAmount = trailerQuote ? Number(trailerQuote.listedMinor || 0) / 100 : 0;
+  const selectedTrailerPrefix = (trailerQuote?.currency || trailerCurrencyLabel || "INR") === "USD" ? "$" : "INR";
+  const formatTrailerAmount = (amount) => Number.isInteger(amount) ? String(amount) : Number(amount).toFixed(2);
   const trailerSelectionSummary = [
     `Duration: ${trailerDurationChoice} sec`,
     `Quality: ${trailerQualityChoice}px`,
@@ -750,7 +760,18 @@ const ScriptDetail = () => {
     setShowHoldModal(false);
   };
 
+  // With taxes on, the package goes through the checkout step (billing details + Taxes + total) first.
   const handleGenerateTrailer = async () => {
+    if (!script?._id || trailerLoading) return;
+    if (taxConfig?.chargingEnabled) {
+      setShowTrailerPaymentModal(false);
+      setTrailerCheckoutOpen(true);
+      return;
+    }
+    await runTrailerPayment();
+  };
+
+  const runTrailerPayment = async ({ billing = null, saveBilling = false } = {}) => {
     if (!script?._id || trailerLoading) return;
     setTrailerLoading(true);
     try {
@@ -761,7 +782,9 @@ const ScriptDetail = () => {
         quality: trailerQualityChoice,
         format: trailerFormatChoice,
         currency: trailerCurrencyLabel || "INR",
+        ...(billing ? { billing, saveBilling } : {}),
       });
+      setTrailerCheckoutOpen(false);
 
       const paymentObject = new window.Razorpay({
         key: razorpayKeyFromOrder(orderData),
@@ -772,13 +795,10 @@ const ScriptDetail = () => {
         order_id: orderData.orderId,
         handler: async (response) => {
           try {
+            // Only the note and the payment ids: the server reads the package, currency and amount from
+            // the verified order, never from this request.
             const { data } = await api.post(`/scripts/${script._id}/request-ai-trailer`, {
               note: `Payment completed via Razorpay. ${trailerSelectionSummary}`,
-              duration: trailerDurationChoice,
-              quality: trailerQualityChoice,
-              format: trailerFormatChoice,
-              currency: trailerCurrencyLabel || "INR",
-              amount: selectedTrailerAmount,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
@@ -1442,6 +1462,7 @@ const ScriptDetail = () => {
   // Keep the mature controller and endpoint wiring centralized while the
   // cinematic component owns the route's single production presentation.
   return (
+    <>
     <ScriptWorkbenchPage
         vm={{
           script,
@@ -1554,6 +1575,26 @@ const ScriptDetail = () => {
           similarScripts,
         }}
       />
+      <CheckoutModal
+        open={trailerCheckoutOpen}
+        onClose={() => setTrailerCheckoutOpen(false)}
+        title="AI trailer"
+        subtitle={`${trailerDurationChoice}s · ${trailerQualityChoice}px · ${trailerFormatChoice === "portrait" ? "Portrait" : "Landscape"}`}
+        quoteKey={`${trailerDurationChoice}-${trailerQualityChoice}-${trailerFormatChoice}-${trailerCurrencyLabel}`}
+        fetchQuote={async () => {
+          const { data } = await api.post(`/scripts/${script?._id}/request-ai-trailer/quote`, {
+            duration: trailerDurationChoice,
+            quality: trailerQualityChoice,
+            format: trailerFormatChoice,
+            currency: trailerCurrencyLabel || "INR",
+          });
+          return data?.breakdown;
+        }}
+        onPay={(prepared) => runTrailerPayment(prepared)}
+        busy={trailerLoading}
+        dark={isDarkMode}
+      />
+    </>
   );
 
 };

@@ -81,6 +81,26 @@ export const COMPANY = {
   get cin() { return env("COMPANY_CIN", "U62099DL2026PTC468691"); },
   /** Who the authorised signature belongs to. */
   get founder() { return env("FOUNDER_NAME", "Yash"); },
+  /**
+   * GST registration. Printed ONLY on tax invoices and credit notes (CGST Rules r.46), never on the
+   * site or in emails — the founder's wording rule is that users see "Taxes", not GST.
+   */
+  get gstin() { return env("COMPANY_GSTIN", "07AAOCC0556A1ZZ").toUpperCase(); },
+  /** The supplier's state, which decides CGST+SGST (same state) versus IGST (everywhere else). */
+  get gstStateCode() { return env("COMPANY_GST_STATE_CODE", this.gstin.slice(0, 2) || "07"); },
+  /** PAN is characters 3–12 of the GSTIN, so it is derived rather than stored twice. */
+  get pan() { return this.gstin.slice(2, 12); },
+  /**
+   * The principal place of business EXACTLY as the GST registration certificate states it. A tax
+   * invoice must carry this address; `location` above is the one used on general documents and spells
+   * the building differently ("Ajit" vs the registered "Ajeet").
+   */
+  get registeredAddress() {
+    return env(
+      "COMPANY_REGISTERED_ADDRESS",
+      "Suit D, 400A, 12 Ajeet Singh House, Yusuf Sarai Commercial Complex, Near Green Park Metro Station Exit-2, New Delhi, Delhi - 110016",
+    );
+  },
 };
 
 /**

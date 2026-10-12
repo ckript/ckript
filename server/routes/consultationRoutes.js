@@ -2,6 +2,7 @@ import express from "express";
 import protect from "../middleware/authMiddleware.js";
 import { 
   createOrder,
+  getConsultationQuote,
   verifyPayment,
   getWriterConsultations,
   getProfessionalConsultations,
@@ -14,6 +15,8 @@ import {
 
 const router = express.Router();
 
+// The checkout step: price, Taxes (18%), total. Before "/:id" routes so "quote" is never read as an id.
+router.post("/quote", protect, getConsultationQuote);
 router.post("/", protect, createOrder);
 router.post("/:id/payment/verify", protect, verifyPayment);
 router.get("/my", protect, getWriterConsultations);

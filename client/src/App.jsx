@@ -42,6 +42,7 @@ const SeoPage = lazy(() => import("./pages/SeoPage"));
 const PricingRoute = lazy(() => import("./pages/PricingRoute"));
 const PrivacyPolicy = lazy(() => import("./pages/PolicyPage"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
+const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 // const EventPosterModal = lazy(() => import("./components/EventPosterModal"));
 const TermsConditions = lazy(() => import("./pages/TermsConditions"));
 const ScriptUploadTermsConditions = lazy(() => import("./pages/ScriptUploadTermsConditions"));
@@ -516,6 +517,8 @@ function App() {
               <Route path="/t-and-c" element={<Navigate to="/terms-of-service" replace />} />
               <Route path="/registration-privacy-policy" element={<Navigate to="/privacy-policy" replace />} />
               <Route path="/terms-of-service" element={<TermsOfService />} />
+              <Route path="/refund-policy" element={<RefundPolicy />} />
+              <Route path="/cancellation-policy" element={<Navigate to="/refund-policy" replace />} />
               <Route path="/terms-conditions" element={<TermsConditions />} />
               <Route path="/writer-terms" element={<Navigate to="/terms-conditions?tab=writer" replace />} />
               <Route path="/investor-terms" element={<Navigate to="/terms-conditions?tab=investor" replace />} />

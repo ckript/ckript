@@ -13,7 +13,7 @@ import {
   createScriptHoldOrder, verifyScriptHold, getScriptHoldQuote,
   uploadThumbnail, uploadTrailer, uploadPitchVideo,
   uploadScriptThumbnail, uploadScriptTrailer, uploadScriptPitchVideo,
-  createScriptTrailerOrder, verifyScriptTrailerPayment, submitTrailerFeedback,
+  createScriptTrailerOrder, getScriptTrailerQuote, verifyScriptTrailerPayment, submitTrailerFeedback,
   activateProjectSpotlight,
   getInvestorHomeFeed, getTopList,
   requestScriptPurchase, approveScriptPurchase, rejectScriptPurchase, getMyPurchaseRequests,
@@ -137,6 +137,7 @@ router.get("/:id/media-uploads/:sessionId", protect, getMediaUploadSession);
 router.put("/:id/media-uploads/:sessionId/parts/:partNumber", protect, uploadMediaPartWithLimit, uploadMediaPart);
 router.post("/:id/media-uploads/:sessionId/complete", protect, completeMediaUploadSession);
 router.delete("/:id/media-uploads/:sessionId", protect, abortMediaUploadSession);
+router.post("/:id/request-ai-trailer/quote", protect, getScriptTrailerQuote);
 router.post("/:id/request-ai-trailer/create-order", protect, createScriptTrailerOrder);
 router.post("/:id/request-ai-trailer", protect, verifyScriptTrailerPayment);
 router.post("/:id/trailer-feedback", protect, submitTrailerFeedback);

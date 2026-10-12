@@ -38,6 +38,7 @@ const PAID_SURFACES = [
   ["scriptController.js", "verifyScriptPurchase", "script purchase (paid and free)"],
   ["scriptController.js", "verifyScriptHold", "script hold"],
   ["scriptController.js", "verifyScriptTrailerPayment", "AI trailer"],
+  ["consultationController.js", "verifyPayment", "consultation"],
 ];
 
 describe("every payment surface issues an invoice", () => {

@@ -51,6 +51,8 @@ import { isInviteExpired } from "../utils/inviteToken.js";
 import { UAParser } from "ua-parser-js";
 import geoip from "geoip-lite";
 import axios from "axios";
+import { syncIfRenewalDue } from "../utils/planSubscription.js";
+import { getRazorpayClient } from "../utils/razorpayClient.js";
 
 const addSessionToUser = async (req, user) => {
   const sessionId = crypto.randomUUID();
@@ -1621,8 +1623,16 @@ export const validateSignupAddress = async (req, res) => {
 // Validate token & return current user data (used on page refresh)
 export const getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    let user = await User.findById(req.user._id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
+
+    // An auto-renewing plan whose paid window has ended should have been renewed by a webhook. If that
+    // delivery never came, pull the state from Razorpay now rather than locking out a member whose card
+    // was charged. Cheap when it doesn't apply: no Razorpay call unless a renewal is actually due.
+    if (user.subscription?.recurring?.autoRenew) {
+      const synced = await syncIfRenewalDue({ razorpay: await getRazorpayClient(), user });
+      if (synced) user = (await User.findById(req.user._id).select("-password")) || user;
+    }
 
     // Extract expiry from the current token
     const token = req.headers.authorization.split(" ")[1];

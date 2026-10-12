@@ -105,6 +105,12 @@ export const registerForFreeChallenge = ({ competitionId, payload }) => call(
   "Could not complete registration. Please try again.",
 );
 
+/** The entry fee for the checkout step: listed fee, Taxes (18%), total. No order is created. */
+export const fetchChallengeRegistrationQuote = ({ competitionId, currency, country }) => call(
+  () => api.post(`/competitions/${encodeURIComponent(competitionId)}/registration-quote`, { currency, country }),
+  "Could not work out the entry fee.",
+);
+
 export const createChallengeRegistrationOrder = ({ competitionId, payload }) => call(
   () => api.post(`/competitions/${encodeURIComponent(competitionId)}/create-registration-order`, payload),
   "Could not prepare the payment. Please try again.",

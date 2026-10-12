@@ -1,0 +1,299 @@
+/* Checkout step: price breakdown + billing details. Prefix: ckx-co.
+   Neutral by default; `.ckx-co--dark` for dark surfaces. Says "Taxes" — never GST. */
+
+.ckx-co {
+  --ckx-ink: #14110f;
+  --ckx-soft: #4a4440;
+  --ckx-muted: #8a807c;
+  --ckx-line: #e7e2df;
+  --ckx-panel: #faf8f6;
+  --ckx-accent: #d14d37;
+  --ckx-field: #ffffff;
+  color: var(--ckx-ink);
+  font-size: 14px;
+  text-align: left;
+}
+
+.ckx-co--dark {
+  --ckx-ink: #f4f1ee;
+  --ckx-soft: #cfc8c3;
+  --ckx-muted: #948b86;
+  --ckx-line: rgba(255, 255, 255, 0.1);
+  --ckx-panel: rgba(255, 255, 255, 0.03);
+  --ckx-field: rgba(255, 255, 255, 0.04);
+}
+
+.ckx-co__title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ckx-co__sub {
+  margin: 0 0 14px;
+  color: var(--ckx-muted);
+  font-size: 12.5px;
+}
+
+/* ── Price breakdown ─────────────────────────────────────── */
+.ckx-co__breakdown {
+  border: 1px solid var(--ckx-line);
+  border-radius: 12px;
+  background: var(--ckx-panel);
+  padding: 6px 14px;
+}
+
+.ckx-co__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ckx-line);
+  color: var(--ckx-soft);
+}
+
+.ckx-co__row:last-child {
+  border-bottom: 0;
+}
+
+.ckx-co__row > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ckx-co__row > span:last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ckx-co__row--subtotal {
+  color: var(--ckx-ink);
+}
+
+.ckx-co__row--total {
+  color: var(--ckx-ink);
+  font-weight: 700;
+  font-size: 15.5px;
+  padding-top: 10px;
+}
+
+.ckx-co__note {
+  margin: 8px 2px 0;
+  color: var(--ckx-muted);
+  font-size: 12px;
+}
+
+.ckx-co__skeleton {
+  height: 92px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--ckx-panel), var(--ckx-line), var(--ckx-panel));
+  background-size: 200% 100%;
+  animation: ckx-co-shimmer 1.2s linear infinite;
+}
+
+@keyframes ckx-co-shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ckx-co__skeleton { animation: none; }
+}
+
+/* ── Billing details ─────────────────────────────────────── */
+.ckx-co__billing {
+  margin-top: 14px;
+}
+
+.ckx-co__billing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ckx-co__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ckx-muted);
+}
+
+.ckx-co__summary {
+  font-size: 13px;
+  color: var(--ckx-soft);
+  overflow-wrap: anywhere;
+}
+
+.ckx-co__link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ckx-accent);
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ckx-co__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ckx-co__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ckx-co__field--wide {
+  grid-column: 1 / -1;
+}
+
+.ckx-co__field > span {
+  font-size: 12px;
+  color: var(--ckx-soft);
+}
+
+.ckx-co__field input,
+.ckx-co__field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--ckx-line);
+  border-radius: 8px;
+  background: var(--ckx-field);
+  color: var(--ckx-ink);
+  padding: 9px 10px;
+  font-size: 14px;
+}
+
+.ckx-co__field input:focus,
+.ckx-co__field select:focus {
+  outline: 2px solid var(--ckx-accent);
+  outline-offset: 1px;
+}
+
+.ckx-co__error {
+  color: #c2410c;
+  font-size: 11.5px;
+}
+
+.ckx-co__toggle {
+  display: inline-flex;
+  border: 1px solid var(--ckx-line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.ckx-co__toggle button {
+  border: 0;
+  background: transparent;
+  color: var(--ckx-soft);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ckx-co__toggle button[aria-pressed="true"] {
+  background: var(--ckx-ink);
+  color: var(--ckx-field);
+}
+
+.ckx-co--dark .ckx-co__toggle button[aria-pressed="true"] {
+  color: #14110f;
+}
+
+.ckx-co__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ckx-soft);
+  margin-top: 8px;
+}
+
+/* ── Actions ─────────────────────────────────────────────── */
+.ckx-co__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.ckx-co__pay {
+  flex: 1 1 200px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ckx-accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.ckx-co__pay:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ckx-co__back {
+  border: 1px solid var(--ckx-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ckx-soft);
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.ckx-co__message {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: #c2410c;
+}
+
+@media (max-width: 480px) {
+  .ckx-co__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Overlay (CheckoutModal) ─────────────────────────────── */
+.ckx-co__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 8, 7, 0.55);
+}
+
+.ckx-co__dialog {
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+}
+
+.ckx-co__dialog--dark {
+  background: #16120f;
+}
+
+.ckx-co__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

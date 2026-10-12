@@ -12,7 +12,12 @@
 // shown, the interceptor decides what the server is told.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-const ADMIN = { token: "admin-token", role: "admin", name: "Ckript Admin", email: "admin@ckript.com" };
+// Every test here imports its subject cold (and the page tests reset the module graph first), so on a
+// busy machine the first transform of FinanceHome and its sections can outrun the 5s default. That
+// is the import, not the assertion, timing out — give it room rather than letting it flake.
+vi.setConfig({ testTimeout: 30000 });
+
+const ADMIN ={ token: "admin-token", role: "admin", name: "Ckript Admin", email: "admin@ckript.com" };
 
 beforeEach(() => {
   sessionStorage.clear();

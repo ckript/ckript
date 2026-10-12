@@ -3,6 +3,7 @@ import PDFDocument from "pdfkit";
 import { uploadToCloudinary } from "../config/cloudinary.js";
 import { CONTACTS, COMPANY } from "./companyContacts.js";
 import { LOGO, SIGNATURE, BRAND } from "./brandAssets.js";
+import { renderTaxInvoicePdfBuffer } from "./tax/taxInvoicePdf.js";
 
 /**
  * The Ckript invoice.
@@ -169,8 +170,10 @@ export const renderInvoicePdfBuffer = async ({
           .text(COMPANY.name.toLowerCase(), left, y + 8, { characterSpacing: -0.5 });
       }
 
-      doc.font("Times-Bold").fontSize(27).fillColor(BRAND.ink)
-        .text("INVOICE", right - 240, y + 4, { width: 240, align: "right", characterSpacing: 3 });
+      // A zero-value record of access granted is not an invoice, and does not call itself one.
+      const docTitle = invoice.documentType === "access_confirmation" ? "ACCESS CONFIRMATION" : "INVOICE";
+      doc.font("Times-Bold").fontSize(docTitle.length > 10 ? 15 : 27).fillColor(BRAND.ink)
+        .text(docTitle, right - 240, y + (docTitle.length > 10 ? 12 : 4), { width: 240, align: "right", characterSpacing: docTitle.length > 10 ? 1.5 : 3 });
       doc.font("Helvetica-Bold").fontSize(9.5).fillColor(BRAND.accent)
         .text(toSafeText(invoice.invoiceNumber), right - 240, y + 38, { width: 240, align: "right", characterSpacing: 0.4 });
 
@@ -420,9 +423,14 @@ export const renderInvoicePdfBuffer = async ({
   return pdfBuffer;
 };
 
+/** Tax invoices and credit notes have their own (r.46) layout; everything else keeps this one. */
+const isTaxDocument = (invoice) => ["tax_invoice", "credit_note"].includes(invoice?.documentType) && Boolean(invoice?.tax);
+
 export const generateAndSaveInvoicePdf = async (args) => {
   const { invoice } = args || {};
-  const pdfBuffer = await renderInvoicePdfBuffer(args);
+  const pdfBuffer = isTaxDocument(invoice)
+    ? await renderTaxInvoicePdfBuffer({ invoice })
+    : await renderInvoicePdfBuffer(args);
   const safeInvoiceNumber = String(invoice.invoiceNumber).replace(/[^a-zA-Z0-9-_]/g, "_");
 
   const uploadResult = await uploadToCloudinary(pdfBuffer, {

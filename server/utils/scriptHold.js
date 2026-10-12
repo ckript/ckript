@@ -1,14 +1,15 @@
-import crypto from "crypto";
+import { verifyRazorpaySignature } from "./razorpaySignature.js";
 
 const text = (value) => String(value ?? "").trim();
 const sameMoney = (left, right) => Math.abs(Number(left || 0) - Number(right || 0)) < 0.01;
 
+/**
+ * Kept for its existing callers and tests, but no longer a separate implementation: the HMAC check
+ * lives in exactly one place (razorpaySignature.js), so a fix there reaches every flow.
+ */
 export const isValidRazorpaySignature = ({ orderId, paymentId, signature, secret } = {}) => {
   if (![orderId, paymentId, signature, secret].every((value) => text(value))) return false;
-  const expected = crypto.createHmac("sha256", secret).update(`${orderId}|${paymentId}`).digest("hex");
-  const supplied = text(signature);
-  if (expected.length !== supplied.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(supplied));
+  return verifyRazorpaySignature({ orderId: text(orderId), paymentId: text(paymentId), signature: text(signature), secret });
 };
 /**
  * A valid callback proves more than possession of a signature: the fetched order and payment must
@@ -59,8 +60,11 @@ export const validateScriptHoldPayment = ({
     ok: true,
     charge: {
       currency: orderCurrency,
+      amountMinor: orderAmount,
       chargedTotal: orderAmount / 100,
-      fxRate: Number(notes.fxRate) || 1,
+      // An order that fell back from USD to INR keeps the USD rate in its notes; INR is always 1.
+      fxRate: orderCurrency === "INR" ? 1 : Number(notes.fxRate) || 1,
+      paidAt: payment?.created_at ? new Date(Number(payment.created_at) * 1000) : new Date(),
     },
   };
 };

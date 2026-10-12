@@ -2,6 +2,7 @@ import express from "express";
 import protect from "../middleware/authMiddleware.js";
 import { getWriters, getBlockedUsers, blockUser,getCurrentUser,unblockUser, getUserProfile, getProfileCollections, getPublicUserProfile, updateUserProfile, followUser, unfollowUser, getFollowRequests, acceptFollowRequest, rejectFollowRequest, cancelFollowRequest, getWatchlist, addToWatchlist, removeFromWatchlist, uploadProfileImage, upload, uploadNotableCreditAttachmentsFile, uploadNotableCreditAttachments, getNotableCreditAttachmentAccessUrl, getNotableCreditAttachmentFile, removeNotableCreditAttachment, updateSettings, changePassword, changeEmail, sendEmailVerificationCode, verifyEmailVerificationCode, deleteAccount } from "../controllers/userController.js";
 import { getReaderProfile } from "../controllers/readerProfileController.js";
+import { getBillingProfile, updateBillingProfile } from "../controllers/billingController.js";
 
 const router = express.Router();
 
@@ -22,6 +23,10 @@ router.get("/follow-requests", protect, getFollowRequests);
 router.post("/follow-requests/accept", protect, acceptFollowRequest);
 router.post("/follow-requests/reject", protect, rejectFollowRequest);
 router.post("/follow-requests/cancel", protect, cancelFollowRequest);
+
+// Billing details for tax invoices (must come before /:id)
+router.get("/billing-profile", protect, getBillingProfile);
+router.put("/billing-profile", protect, updateBillingProfile);
 
 // Settings routes (must come before /:id)
 router.put("/settings", protect, updateSettings);

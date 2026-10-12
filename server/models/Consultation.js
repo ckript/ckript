@@ -1,11 +1,20 @@
 import mongoose from "mongoose";
+import taxSnapshotSchema from "./schemas/taxSnapshot.js";
 
 const consultationSchema = new mongoose.Schema({
   bookingId: { type: String, unique: true, index: true },
   writer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
   professional: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
   professionalRole: { type: String },
+  // What the writer is charged, in minor units — the consultation price PLUS taxes when taxes apply.
   amount: { type: Number, required: true },
+  // The consultation price before taxes. The platform fee and the professional's share are computed
+  // from THIS, so taxes never come out of the professional's payout.
+  preTaxAmount: { type: Number, default: 0 },
+  taxMinor: { type: Number, default: 0 },
+  tax: { type: taxSnapshotSchema },
+  invoice: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice" },
+  creditNote: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice" },
   currency: { type: String, default: "INR" },
   platformFee: { type: Number, default: 0 },
   professionalAmount: { type: Number, required: true },

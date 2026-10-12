@@ -1425,14 +1425,19 @@ export const sendExternalRegistrationDecisionEmail = async (
 
 export const sendConsultationPaidWriterEmail = async (toEmail, opts) => {
   try {
-    const { writerName, producerName, amount, currency, date, time } = opts;
+    const { writerName, producerName, amount, taxes = 0, currency, date, time, charged = true } = opts;
+    // Only claim a payment when one was taken: with consultation payments switched off, nothing was.
+    // Taxes are named as "taxes" — never GST — in anything a user reads.
+    const paidLine = charged
+      ? `You have paid ${Number(amount).toFixed(2)} ${currency}${Number(taxes) > 0 ? ` (including ${Number(taxes).toFixed(2)} ${currency} taxes)` : ""} for your consultation request with ${producerName}. Your tax invoice is in Billing & invoices on your profile.`
+      : `Your consultation request with ${producerName} has been sent. No payment was taken for this booking.`;
     const html = renderMailDocument({
       title: "Consultation Request Sent",
-      preheader: "Your paid consultation request has been sent to the producer.",
+      preheader: "Your consultation request has been sent to the professional.",
       blocks: [
         fragment(
           paragraphs(
-            `Hi ${writerName},\n\nYou have successfully paid ${amount} ${currency} for your consultation request with ${producerName}.\n\nDate: ${date}\nTime: ${time}\n\nThe professional will now review your request. If they accept, you will receive an email with the Google Meet link. If they reject, your money will be refunded within a week.`
+            `Hi ${writerName},\n\n${paidLine}\n\nDate: ${date}\nTime: ${time}\n\nThe professional will now review your request. If they accept, you will receive an email with the Google Meet link.${charged ? " If they decline, your payment, taxes included, is refunded in full." : ""}`
           )
         ),
         button({ text: "View Request", url: buildClientUrl("/profile") }),
@@ -1458,14 +1463,20 @@ export const sendConsultationPaidWriterEmail = async (toEmail, opts) => {
 
 export const sendConsultationBookedEmail = async (toEmail, opts) => {
   try {
-    const { professionalName, writerName, topic, date, time, amount, currency } = opts;
+    const { professionalName, writerName, topic, date, time, amount, platformFee, payout, currency } = opts;
+    // What the professional actually receives: the price less the 10% platform fee. This used to say
+    // "the full amount", which was never true.
+    const money = (v) => `${Number(v || 0).toFixed(2)} ${currency}`;
+    const earningsLine = payout !== undefined
+      ? `Consultation price: ${money(amount)}\nPlatform fee (10%): ${money(platformFee)}\nYou receive: ${money(payout)}`
+      : `Consultation price: ${money(amount)}`;
     const html = renderMailDocument({
       title: "New Consultation Request",
       preheader: "A writer has requested a paid meeting with you.",
       blocks: [
         fragment(
           paragraphs(
-            `Hi ${professionalName},\n\n${writerName} has requested a paid consultation with you.\n\nConsultation Topic: ${topic}\nDate: ${date}\nTime: ${time}\n\nYou will receive the full ${amount} ${currency} for this session.\n\nPlease click below to review and Accept or Reject the request from your dashboard.`
+            `Hi ${professionalName},\n\n${writerName} has requested a consultation with you.\n\nConsultation Topic: ${topic}\nDate: ${date}\nTime: ${time}\n\n${earningsLine}\n\nPlease click below to review and Accept or Reject the request from your dashboard.`
           )
         ),
         button({ text: "Approve, Reject, or Reschedule (Dashboard)", url: buildClientUrl("/dashboard") }),
@@ -1584,5 +1595,60 @@ export const sendMeetingRescheduledProfessionalEmail = async (
   } catch (error) {
     console.error("Error sending reschedule professional email:", error);
     return { success: false };
+  }
+};
+
+/**
+ * The receipt for a payment, with its tax invoice — or, for a refund, the credit note.
+ *
+ * Every paid surface sends this from ONE place (utils/tax/documentMail.js, called when a document is
+ * issued), so a new checkout cannot forget to. Wording: "Taxes", never GST — the statutory names are
+ * on the attached tax invoice, where the law requires them, and nowhere in the email itself.
+ */
+export const sendPaymentDocumentEmail = async (toEmail, opts = {}) => {
+  try {
+    const {
+      name = "",
+      isCredit = false,
+      documentLabel = "Tax invoice",
+      number = "",
+      date = "",
+      title = "",
+      rows = [],
+      total = "",
+      againstNumber = "",
+    } = opts;
+    const html = renderMailDocument({
+      title: isCredit ? "Your refund" : "Payment received",
+      preheader: isCredit
+        ? `Your refund of ${total} has been processed. Credit note ${number}.`
+        : `Thank you — ${total} received. Your ${documentLabel.toLowerCase()} ${number} is ready.`,
+      blocks: [
+        heading({ eyebrow: isCredit ? "Refund" : "Receipt", title: isCredit ? "Your refund is on its way" : "Thank you for your payment" }),
+        fragment(paragraphs(isCredit
+          ? `Hi ${name || "there"},\n\nWe have refunded ${total} for ${title || "your purchase"}, taxes included. It usually reaches your account within 5–7 working days. Credit note ${number} records the refund against invoice ${againstNumber}.`
+          : `Hi ${name || "there"},\n\nWe have received ${total} for ${title || "your purchase"}. Your ${documentLabel.toLowerCase()} is below and can be downloaded any time from Billing & invoices on your profile.`)),
+        facts([
+          [documentLabel, number],
+          ["Date", date],
+          ...rows,
+          [isCredit ? "Total refunded" : "Total paid", total],
+        ]),
+        button({ text: "View billing & invoices", url: buildClientUrl("/profile?tab=settings") }),
+        fineprint("Keep this email for your records. Questions about a payment? Reply to this email."),
+      ],
+    });
+
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: mailFrom(),
+      to: toEmail,
+      subject: isCredit ? `Refund processed — credit note ${number}` : `Payment received — ${documentLabel.toLowerCase()} ${number}`,
+      html,
+    });
+    return { success: true };
+  } catch (err) {
+    console.error("sendPaymentDocumentEmail Error:", err?.message || err);
+    return { success: false, error: err };
   }
 };

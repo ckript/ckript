@@ -7,6 +7,8 @@ import ScriptOption from "../models/ScriptOption.js";
 import ScriptPurchaseRequest from "../models/ScriptPurchaseRequest.js";
 import Transaction from "../models/Transaction.js";
 import Invoice from "../models/Invoice.js";
+import LedgerEntry from "../models/LedgerEntry.js";
+import { documentsFor, documentTaxes, withTaxes } from "./financeController.js";
 import Agreement from "../models/Agreement.js";
 import Notification from "../models/Notification.js";
 import Message from "../models/Message.js";
@@ -489,11 +491,22 @@ export const getStats = async (req, res) => {
         const bankReviewAlerts = pendingBankReviews + lockedBankUsers;
         const openAdminActions = pendingApprovals + pendingTrailerRequests + pendingInvestors + pendingMembershipReviews + bankReviewAlerts + queries;
 
-        const revenueResult = await Transaction.aggregate([
-            { $match: { status: "completed", type: { $in: ["credit", "payment"] } } },
-            { $group: { _id: null, total: { $sum: "$amount" } } },
+        // Revenue from the ledger, per currency, net of refunds AND of taxes — taxes are owed to the
+        // government, not earned. This used to sum signed Transaction amounts across INR and USD (and
+        // writer credits) into one meaningless number.
+        const [netByCurrency, taxes] = await Promise.all([
+            LedgerEntry.aggregate([
+                { $match: { settlement: { $in: ["paid", "reversed"] } } },
+                { $group: { _id: "$currency", netMinor: { $sum: "$amountMinor" } } },
+            ]),
+            documentTaxes({}),
         ]);
-        const totalRevenue = revenueResult[0]?.total || 0;
+        const revenueByCurrency = netByCurrency.map((r) => {
+            const taxMinor = Number(taxes.byCurrency.get(r._id)?.taxMinor || 0);
+            return { currency: r._id, netMinor: r.netMinor, taxMinor, revenueExTaxMinor: r.netMinor - taxMinor };
+        });
+        // Kept for older clients: INR revenue excluding taxes, in rupees.
+        const totalRevenue = (revenueByCurrency.find((r) => r.currency === "INR")?.revenueExTaxMinor || 0) / 100;
 
         res.json({
             totalUsers,
@@ -522,6 +535,7 @@ export const getStats = async (req, res) => {
             openAdminActions,
             totalTransactions,
             totalRevenue,
+            revenueByCurrency,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -1489,7 +1503,30 @@ export const getInvestorPurchases = async (req, res) => {
             .skip((page - 1) * limit)
             .limit(Number(limit));
         const total = await Script.countDocuments({ unlockedBy: { $exists: true, $not: { $size: 0 } } });
-        res.json({ scripts, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+        const entries = await LedgerEntry.find({
+            kind: "script_purchase",
+            settlement: "paid",
+            subjectId: { $in: scripts.map((sc) => sc._id) },
+        }).populate("user", "name email").lean();
+        const docs = await documentsFor(entries);
+        const salesByScript = new Map();
+        for (const entry of entries) {
+            const row = withTaxes(entry, docs);
+            const list = salesByScript.get(String(entry.subjectId)) || [];
+            list.push({
+                buyer: entry.user?.name || "",
+                paidAt: entry.occurredAt,
+                currency: entry.currency,
+                paidMinor: entry.amountMinor,
+                taxMinor: row.taxMinor,
+                priceAndFeeMinor: entry.amountMinor - row.taxMinor,
+                writerPayoutMinor: entry.creatorPayoutMinor || Math.round(Number(entry.metadata?.writerPayoutInr || 0) * 100),
+                documentNumber: row.document?.number || "",
+            });
+            salesByScript.set(String(entry.subjectId), list);
+        }
+        const rows = scripts.map((sc) => ({ ...sc.toObject(), sales: salesByScript.get(String(sc._id)) || [] }));
+        res.json({ scripts: rows, total, page: Number(page), totalPages: Math.ceil(total / limit) });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -1528,10 +1565,15 @@ export const getPayments = async (req, res) => {
 // ─── Invoices ───
 export const getInvoices = async (req, res) => {
     try {
-        const { page = 1, limit = 20, search = "" } = req.query;
+        const { page = 1, limit = 20, search = "", documentType = "" } = req.query;
         const skip = (Number(page) - 1) * Number(limit);
 
         const pipeline = [
+            ...(["tax_invoice", "credit_note", "legacy_invoice", "access_confirmation"].includes(String(documentType))
+                ? [{ $match: String(documentType) === "legacy_invoice"
+                    ? { documentType: { $in: ["legacy_invoice", null] } }
+                    : { documentType: String(documentType) } }]
+                : [{ $match: { documentType: { $ne: "cancelled" } } }]),
             {
                 $lookup: {
                     from: "users",
@@ -1575,6 +1617,20 @@ export const getInvoices = async (req, res) => {
                             $project: {
                                 invoiceNumber: 1,
                                 invoiceDate: 1,
+                                supplyDate: 1,
+                                kind: 1,
+                                documentType: 1,
+                                currency: 1,
+                                amountCharged: 1,
+                                competition: 1,
+                                providerPaymentId: 1,
+                                originalInvoiceNumber: 1,
+                                taxTotals: "$tax.totals",
+                                taxRateBps: "$tax.rateBps",
+                                taxSupplyType: "$tax.supplyType",
+                                taxGap: "$tax.gap",
+                                placeOfSupply: "$tax.placeOfSupply",
+                                buyerBusinessTaxId: "$tax.recipient.gstin",
                                 accessType: 1,
                                 scriptPrice: 1,
                                 platformFeeRate: 1,

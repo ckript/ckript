@@ -15,6 +15,7 @@ import {
   getHallOfFameEntry,
   getMyCompetitionReferrals,
   createRegistrationOrder,
+  getRegistrationQuote,
   verifyRegistrationPayment,
   reconcileRegistrationPayment,
 } from "../controllers/competitionController.js";
@@ -39,6 +40,7 @@ router.get("/history/:userId", getCompetitionHistory);
 // Participant. `/mine` is declared before `/:id/...` so it is never captured as an id.
 router.get("/mine", protect, getMyCompetitions);
 router.post("/:id/register", protect, registerForCompetition);
+router.post("/:id/registration-quote", protect, getRegistrationQuote);
 router.post("/:id/create-registration-order", protect, createRegistrationOrder);
 router.post("/:id/verify-registration-payment", protect, verifyRegistrationPayment);
 router.post("/:id/reconcile-registration-payment", protect, reconcileRegistrationPayment);

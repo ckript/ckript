@@ -49,9 +49,9 @@ describe("pricing", () => {
     // getScriptPurchasePricing rounds the tax before adding it, so 249.99 * 0.05 = 12.4995 -> 12.50.
     expect(getPurchasePricing(249.99)).toEqual({
       baseAmount: 249.99,
-      platformTaxRate: 0.05,
-      platformTaxPercent: 5,
-      platformTaxAmount: 12.5,
+      platformFeeRate: 0.05,
+      platformFeePercent: 5,
+      platformFeeAmount: 12.5,
       totalAmount: 262.49,
     });
   });
@@ -67,7 +67,7 @@ describe("pricing", () => {
   });
 
   it("prefers the server's pricing over the local estimate once an order exists", () => {
-    const server = { pricing: { baseAmount: 1000, platformTaxAmount: 50, totalAmount: 1050, platformTaxRate: 0.05, platformTaxPercent: 5 } };
+    const server = { pricing: { baseAmount: 1000, platformFeeAmount: 50, totalAmount: 1050, platformFeeRate: 0.05, platformFeePercent: 5 } };
     expect(readOrderPricing(server, 999).totalAmount).toBe(1050);
     expect(readOrderPricing({}, 1000).totalAmount).toBe(1050);
   });

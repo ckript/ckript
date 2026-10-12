@@ -18,6 +18,10 @@ import {
 import { useProjectCheckout } from "./script-detail/useProjectCheckout";
 import { PROJECT_DETAIL_STATUS, useProjectDetail } from "./script-detail/useProjectDetail";
 import { getScriptCanonicalPath } from "../utils/scriptPath";
+import PriceBreakdown from "../components/checkout/PriceBreakdown";
+import BillingSection from "../components/checkout/BillingSection";
+import useBillingDetails from "../components/checkout/useBillingDetails";
+import { payLabel } from "../utils/taxes";
 
 /*
  * The desktop screenplay checkout.
@@ -68,6 +72,14 @@ export default function ScriptPaymentPage() {
   );
 
   const { standing, pricing, success } = checkout;
+  // Billing details are asked for only while taxes are being charged (they address the tax invoice).
+  const billingDetails = useBillingDetails();
+  const askBilling = billingDetails.chargingEnabled && checkout.requiresPayment && standing.canPay && !success;
+  const startPayment = () => {
+    if (!askBilling) return checkout.pay();
+    const prepared = billingDetails.prepare();
+    return prepared ? checkout.pay(prepared) : false;
+  };
   const rights = script?.rightsLicensing || {};
   const licenseMonths = Number(rights?.timeBound?.licenseDurationMonths || 0);
   const royaltyPercent = Number(rights?.royaltySettings?.percentage || 0);
@@ -223,21 +235,29 @@ export default function ScriptPaymentPage() {
             <div className={`rounded-xl border p-4 sm:p-5 ${t.inset}`}>
               <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${t.muted}`}>Payment Breakdown</p>
               <div className={`space-y-2.5 text-sm ${t.sub}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Script Access Fee</span>
-                  <span className={`font-semibold ${t.title}`}>{formatInr(pricing.baseAmount)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Platform Commission ({pricing.platformTaxPercent}%)</span>
-                  <span className={`font-semibold ${t.title}`}>{formatInr(pricing.platformTaxAmount)}</span>
-                </div>
-                <div className={`flex items-center justify-between gap-3 pt-2 border-t ${t.row}`}>
-                  <span className={`font-bold ${t.title}`}>Total Payable</span>
-                  <span className={`text-lg font-extrabold ${t.title}`}>{formatInr(pricing.totalAmount)}</span>
-                </div>
+                {checkout.breakdown ? (
+                  // The server's own figures: script price, platform fee, Taxes (18%), total.
+                  <PriceBreakdown breakdown={checkout.breakdown} dark={isDarkMode} />
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Script price</span>
+                      <span className={`font-semibold ${t.title}`}>{formatInr(pricing.baseAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Platform fee ({pricing.platformFeePercent}%)</span>
+                      <span className={`font-semibold ${t.title}`}>{formatInr(pricing.platformFeeAmount)}</span>
+                    </div>
+                    <div className={`flex items-center justify-between gap-3 pt-2 border-t ${t.row}`}>
+                      <span className={`font-bold ${t.title}`}>Total Payable</span>
+                      <span className={`text-lg font-extrabold ${t.title}`}>{formatInr(pricing.totalAmount)}</span>
+                    </div>
+                  </>
+                )}
                 <p className={`text-xs pt-1 ${t.muted}`}>
-                  Writer receives the full script access fee. Platform commission is charged separately at checkout.
+                  The writer receives the full script price. The platform fee{checkout.breakdown?.taxMinor > 0 ? " and taxes are" : " is"} paid by the buyer on top.
                 </p>
+                {askBilling && <BillingSection details={billingDetails} dark={isDarkMode} />}
                 {/* The 72-hour window the server enforces twice and this page never used to state. */}
                 {standing.window?.note && (
                   <p className={`text-xs font-semibold pt-1 ${t.sub}`}>{standing.window.note}</p>
@@ -324,14 +344,14 @@ export default function ScriptPaymentPage() {
               {standing.canPay && !success && (
                 <button
                   type="button"
-                  onClick={checkout.pay}
+                  onClick={startPayment}
                   aria-busy={checkout.processing || undefined}
                   className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${t.btnPrimary}`}
                 >
                   {checkout.processing
                     ? "Processing Payment..."
                     : checkout.requiresPayment
-                    ? `Pay ${formatInr(pricing.totalAmount)}`
+                    ? (checkout.breakdown ? payLabel(checkout.breakdown) : `Pay ${formatInr(pricing.totalAmount)}`)
                     : "Get Full Script (Free)"}
                 </button>
               )}

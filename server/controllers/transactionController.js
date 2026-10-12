@@ -248,9 +248,11 @@ export const getWalletBalance = async (req, res) => {
 // @access  Private
 export const requestWithdrawal = async (req, res) => {
   try {
-    const { amount } = req.body;
-    
-    if (!amount || amount <= 0) {
+    // Coerced and rounded: a string amount used to reach `pendingBalance + amount` and CONCATENATE
+    // ("500" + 100 = "500100") instead of adding.
+    const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ message: "Invalid withdrawal amount" });
     }
     
@@ -287,7 +289,7 @@ export const requestWithdrawal = async (req, res) => {
     
     // Update user wallet (move to pending)
     user.wallet.balance -= amount;
-    user.wallet.pendingBalance = (user.wallet.pendingBalance || 0) + amount;
+    user.wallet.pendingBalance = Number(user.wallet.pendingBalance || 0) + amount;
     await user.save();
     
     res.status(201).json({ 
