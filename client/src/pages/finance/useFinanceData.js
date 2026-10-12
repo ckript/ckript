@@ -38,14 +38,24 @@ const SOURCES = {
     searchable: false,
     params: { kind: "competition_registration" },
   },
+  // Filterable by `documentType` (tax_invoice / credit_note / legacy_invoice / access_confirmation),
+  // passed through `filters` — FinanceHome owns that choice.
   invoices: { url: "/finance/invoices", key: "invoices" },
   purchases: { url: "/finance/purchases", key: "scripts" },
+  // Written with the tax work, so they answer in the ledger family's shape (`rows` + `pages`) and
+  // take no search term.
+  consultations: { url: "/finance/consultations", key: "rows", pagesKey: "pages", searchable: false },
+  plans: { url: "/finance/plans", key: "rows", pagesKey: "pages", searchable: false },
   premium: { url: "/finance/users", key: "users", params: { isPremium: true, role: "investor" } },
   "writer-plans": { url: "/finance/users", key: "users", params: { hasActiveWriterPlan: true } },
   "bank-reviews": { url: "/finance/bank-reviews", key: "reviews" },
 };
 
-export default function useFinanceData(section, search) {
+/**
+ * `filters` — extra query parameters for the active section (the invoices document-type filter). Pass
+ * a memoised object: a new identity on every render would re-fetch on every render.
+ */
+export default function useFinanceData(section, search, filters = null) {
   const [rows, setRows] = useState([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -58,11 +68,16 @@ export default function useFinanceData(section, search) {
   // pattern React sanctions for "derive state from a changed input". Doing it in an effect would
   // fetch page 3 of the new section first and then correct itself, showing a wrong result set for
   // one round trip.
-  const queryKey = `${section || ""}|${search || ""}`;
+  //
+  // `loading` is raised in the same pass: until the new section's rows arrive, the rows held are the
+  // PREVIOUS section's, and handing them to the new section's columns would render one table's data
+  // under another's headings for a round trip.
+  const queryKey = `${section || ""}|${search || ""}|${JSON.stringify(filters || {})}`;
   const [lastQueryKey, setLastQueryKey] = useState(queryKey);
   if (queryKey !== lastQueryKey) {
     setLastQueryKey(queryKey);
     setPage(1);
+    setLoading(true);
   }
 
   const source = section ? SOURCES[section] : null;
@@ -78,6 +93,7 @@ export default function useFinanceData(section, search) {
             page,
             search: source.searchable === false ? undefined : search || undefined,
             ...(source.params || {}),
+            ...(filters || {}),
           },
         });
         if (cancelled) return;
@@ -97,7 +113,7 @@ export default function useFinanceData(section, search) {
     })();
 
     return () => { cancelled = true; };
-  }, [source, page, search, reloadToken]);
+  }, [source, page, search, filters, reloadToken]);
 
   /** Re-fetch after a control action (a grant, a bank-review decision) changes the data. */
   const refresh = useCallback(() => { setLoading(true); setReloadToken((t) => t + 1); }, []);

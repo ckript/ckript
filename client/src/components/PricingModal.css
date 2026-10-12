@@ -180,6 +180,28 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
+/* "Billed monthly · renews until you cancel" — paid plans are Razorpay Subscriptions. */
+.pmx-billing-note {
+  margin-top: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: #8a8a8a;
+}
+.pmx-tier--gold .pmx-billing-note {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* Under "Switch to …": buying the other writer tier replaces the current one today. */
+.pmx-switch-note {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #8a8a8a;
+}
+.pmx-tier--gold .pmx-switch-note {
+  color: rgba(255, 255, 255, 0.45);
+}
+
 .pmx-tier-divider {
   margin: 14px 0;
   height: 1px;
@@ -690,4 +712,11 @@
   .pmx-spinner {
     animation-duration: 1.4s;
   }
+}
+
+/* The checkout step inside the modal: billing details + Subtotal · Taxes · Total, then pay. */
+.pmx-checkout {
+  max-width: 520px;
+  margin: 8px auto;
+  padding: 8px 4px;
 }

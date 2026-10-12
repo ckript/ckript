@@ -155,6 +155,9 @@ export default function PrivacyPolicy() {
             <Link to="/terms-of-service" className="hover:text-red-900 transition">
               Terms of Service
             </Link>
+            <Link to="/refund-policy" className="hover:text-red-900 transition">
+              Refund Policy
+            </Link>
             <Link to="/" className="hover:text-red-900 transition">
               Home
             </Link>

@@ -38,6 +38,30 @@ export const planAmountMinor = (planKey, currency, cycle) => {
   return cycle === "annual" ? Math.round((base / 100) * ANNUAL_MULTIPLIER) * 100 : base;
 };
 
+const PLAN_LABELS = {
+  film_industry_professional: "Film Industry Professional plan",
+  writer_silver: "Writer Silver plan",
+  writer_gold: "Writer Gold plan",
+};
+
+const PLAN_LINE_KINDS = {
+  film_industry_professional: "plan_fip",
+  writer_silver: "plan_writer_silver",
+  writer_gold: "plan_writer_gold",
+};
+
+/** The plan as a priced line (PRE-TAX), for the tax engine. */
+export const planLines = (planKey, currency, cycle) => {
+  const amountMinor = planAmountMinor(planKey, currency, cycle);
+  if (!amountMinor) return [];
+  const label = PLAN_LABELS[planKey] || "Plan";
+  return [{
+    kind: PLAN_LINE_KINDS[planKey] || "plan",
+    amountMinor,
+    description: `${label} (${cycle === "annual" ? "annual" : "monthly"})`,
+  }];
+};
+
 /** Stamped onto the order at creation. Razorpay returns notes on orders.fetch, so this needs no storage. */
 export const planOrderNotes = ({ userId, planKey, tier = "", cycle }) => ({
   purpose: PLAN_PURPOSE,

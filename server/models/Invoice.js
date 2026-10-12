@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import taxSnapshotSchema from "./schemas/taxSnapshot.js";
 
 const invoiceRowSchema = new mongoose.Schema(
   {
@@ -30,10 +31,45 @@ const invoiceSchema = new mongoose.Schema(
         "plan_subscription",        // FIP / writer silver / writer gold
         "script_hold",              // a paid 30-day option on a script
         "ai_trailer",               // trailer generation
+        "consultation",             // a paid consultation booking
       ],
       default: "script",
       index: true,
     },
+
+    /**
+     * What kind of DOCUMENT this is, as opposed to what was bought.
+     *
+     *   legacy_invoice       every document issued before taxes existed (the read-time default)
+     *   tax_invoice          CGST Rules r.46 tax invoice, numbered CK/<FY>/<seq>
+     *   credit_note          s.34 credit note against a tax invoice, numbered CN/<FY>/<seq>
+     *   access_confirmation  zero consideration (free access); not a tax document
+     *   cancelled            a number that was allocated but never issued — kept so the series has no
+     *                        silent gaps (GSTR-1 Table 13 reports cancelled numbers)
+     */
+    documentType: {
+      type: String,
+      enum: ["legacy_invoice", "tax_invoice", "credit_note", "access_confirmation", "cancelled"],
+      default: "legacy_invoice",
+      index: true,
+    },
+    series: { type: String, default: "" },
+    fy: { type: String, default: "" },
+    seq: { type: Number, default: 0 },
+    /** The return period (IST "YYYY-MM") the document is reported in. */
+    taxPeriod: { type: String, default: "", index: true },
+    /** When the supply was made (the payment date). Differs from invoiceDate only for back-filled invoices. */
+    supplyDate: { type: Date },
+    /** The Razorpay payment this document is for — the join key to the ledger, whatever paymentReference says. */
+    providerPaymentId: { type: String, default: "", index: true },
+    /** The frozen tax computation. Every figure on the PDF and in the finance portal comes from here. */
+    tax: { type: taxSnapshotSchema },
+    // Credit notes point back at the invoice they reduce (s.34 requires its number and date).
+    originalInvoice: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice" },
+    originalInvoiceNumber: { type: String, default: "" },
+    originalInvoiceDate: { type: Date },
+    creditReason: { type: String, default: "" },
+    refundId: { type: String, default: "" },
 
     // Required only where a script is genuinely part of the transaction. Stated as an allowlist
     // rather than "not competition_registration": the old form silently made `script` mandatory for
@@ -41,8 +77,10 @@ const invoiceSchema = new mongoose.Schema(
     script: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Script",
-      required() { return ["script", "script_hold", "ai_trailer"].includes(this.kind); },
+      // A cancelled number placeholder carries no subject at all.
+      required() { return ["script", "script_hold", "ai_trailer"].includes(this.kind) && this.documentType !== "cancelled"; },
     },
+    consultation: { type: mongoose.Schema.Types.ObjectId, ref: "Consultation" },
     scriptSid: { type: String, default: "" },
     competition: { type: mongoose.Schema.Types.ObjectId, ref: "Competition" },
 
@@ -53,7 +91,8 @@ const invoiceSchema = new mongoose.Schema(
     amountCharged: { type: Number, default: 0 },
     accessType: { type: String, enum: ["free", "premium"], default: "free" },
     scriptPrice: { type: Number, default: 0 },
-    platformFeeRate: { type: Number, default: 0.2 },
+    // The script purchase platform fee is 5%; the old 0.2 default described nothing that was ever charged.
+    platformFeeRate: { type: Number, default: 0.05 },
     writerEarnsPerSale: { type: Number, default: 0 },
     services: {
       hosting: { type: Boolean, default: true },
@@ -92,5 +131,6 @@ const invoiceSchema = new mongoose.Schema(
 
 invoiceSchema.index({ creator: 1, createdAt: -1 });
 invoiceSchema.index({ script: 1 });
+invoiceSchema.index({ documentType: 1, taxPeriod: 1 });
 
 export default mongoose.model("Invoice", invoiceSchema);

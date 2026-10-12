@@ -19,6 +19,9 @@ import {
   REGISTRATION_LANGUAGES,
 } from "./challengeRegistration";
 import useChallengeRegistration from "./useChallengeRegistration";
+import PriceBreakdown from "../../components/checkout/PriceBreakdown";
+import { formatSubunits } from "../../utils/currency";
+import { payLabel } from "../../utils/taxes";
 import ExternalRegistrationPanel from "./ExternalRegistrationPanel";
 import "./challenge.css";
 
@@ -153,11 +156,11 @@ export default function CompetitionRegister() {
             <label className="flex cursor-pointer gap-3"><input type="checkbox" checked={registration.acceptCopyright} onChange={(event) => registration.setAcceptance("acceptCopyright", event.target.checked)} /><span>I confirm that the work I submit will be my own original writing.</span></label>{registration.errors.acceptCopyright ? <p role="alert" style={{ color: "var(--ckc-accent-text)" }}>{registration.errors.acceptCopyright}</p> : null}
           </div>
 
-          {mode === "paid" ? <fieldset className="ckc-card ckc-card-pad"><legend className="ckc-title ckc-h3">Payment currency</legend><div className="mt-4 grid gap-3 sm:grid-cols-2">{[{ value: "INR", label: `INR (₹${prices.INR / 100})` }, { value: "USD", label: `USD ($${prices.USD / 100})` }].map((option) => <label key={option.value} className="flex min-h-11 items-center gap-3"><input type="radio" name="registration-currency" value={option.value} checked={registration.currency === option.value} onChange={(event) => registration.setCurrency(event.target.value)} />{option.label}</label>)}</div></fieldset> : null}
+          {mode === "paid" ? <fieldset className="ckc-card ckc-card-pad"><legend className="ckc-title ckc-h3">Payment currency</legend><div className="mt-4 grid gap-3 sm:grid-cols-2">{[{ value: "INR", label: `INR (${formatSubunits(prices.INR, "INR")})` }, { value: "USD", label: `USD (${formatSubunits(prices.USD, "USD")})` }].map((option) => <label key={option.value} className="flex min-h-11 items-center gap-3"><input type="radio" name="registration-currency" value={option.value} checked={registration.currency === option.value} onChange={(event) => registration.setCurrency(event.target.value)} />{option.label}</label>)}</div>{registration.breakdown ? <div className="mt-4"><PriceBreakdown breakdown={registration.breakdown} note="Taxes are added to the entry fee at checkout." /></div> : null}</fieldset> : null}
 
           {registration.serverError ? <div role="alert" className="px-4 py-3" style={{ background: "var(--ckc-blush)", border: "1px solid var(--ckc-accent)", color: "var(--ckc-accent-text)" }}>{registration.serverError}</div> : null}
           {registration.gatewayBlocked && mode === "paid" ? <p>The checkout script is blocked. Pressing pay will try to load it again.</p> : null}
-          <div className="flex items-center gap-5"><button type="submit" disabled={registration.processing || externalPending} className="ckc-btn">{registration.processing ? "Processing…" : mode === "free" ? "Register" : "Pay to register"}</button><Link to={paths.detail} className="ckc-link">Back to the challenge</Link></div>
+          <div className="flex items-center gap-5"><button type="submit" disabled={registration.processing || externalPending} className="ckc-btn">{registration.processing ? "Processing…" : mode === "free" ? "Register" : registration.breakdown ? `${payLabel(registration.breakdown)} and register` : "Pay to register"}</button><Link to={paths.detail} className="ckc-link">Back to the challenge</Link></div>
         </form>
 
         {mode === "paid" ? <ExternalRegistrationPanel state={registration.external} /> : null}

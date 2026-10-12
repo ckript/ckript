@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import taxSnapshotSchema from "./schemas/taxSnapshot.js";
 
 /**
  * The money ledger — one immutable record per money event, across every flow in the product.
@@ -40,6 +41,7 @@ const ledgerEntrySchema = new mongoose.Schema(
         "script_purchase",          // investor buys a script
         "script_hold",              // paid option/hold on a script
         "ai_trailer",               // trailer generation
+        "consultation",             // a paid consultation booking
         "cash_prize",               // competition cash prize: owed by Ckript, paid outside the platform
         "credits",                  // credit top-ups and spends
         "other",
@@ -94,7 +96,7 @@ const ledgerEntrySchema = new mongoose.Schema(
     /** What the money was for. `subjectType` names the collection; both are optional for plans. */
     subjectType: {
       type: String,
-      enum: ["Script", "Competition", "CompetitionEntry", "Plan", "None"],
+      enum: ["Script", "Competition", "CompetitionEntry", "Plan", "Consultation", "None"],
       default: "None",
     },
     subjectId: { type: mongoose.Schema.Types.ObjectId },
@@ -106,6 +108,24 @@ const ledgerEntrySchema = new mongoose.Schema(
     /** The entry this one reverses. Only ever set when settlement is "reversed". */
     reversalOf: { type: mongoose.Schema.Types.ObjectId, ref: "LedgerEntry", default: null },
     invoice: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice", default: null },
+
+    // ── Taxes and settlement ────────────────────────────────────────────────
+    /**
+     * The frozen tax computation for this payment, when taxes applied. Set at insert only (the entry is
+     * append-only); payments from before charging started get theirs on a back-filled tax invoice,
+     * joined by providerPaymentId. Every figure is in `currency` minor units.
+     */
+    tax: { type: taxSnapshotSchema },
+    /** Taxes inside amountMinor (negative on a reversal). 0 when no tax applied. */
+    taxMinor: { type: Number, default: 0 },
+    /**
+     * What the platform owes the writer or professional out of this payment, in INR minor units. A
+     * payout is a cost of the sale, never revenue, and never carries tax.
+     */
+    creatorPayoutMinor: { type: Number, default: 0 },
+    /** Razorpay's fee on this payment, and the tax Razorpay charged on that fee (input tax credit). */
+    gatewayFeeMinor: { type: Number, default: 0 },
+    gatewayTaxMinor: { type: Number, default: 0 },
     /**
      * The code path that wrote this, e.g. "paymentController.verifyWriterRazorpayPayment". When a
      * figure looks wrong, this is what makes it findable without bisecting the whole server.

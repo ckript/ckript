@@ -142,6 +142,9 @@ Fill in `server/.env`:
 | `CLIENT_URL` / `CORS_ORIGINS` | Allowed frontend origin(s) |
 | `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET` | Media storage |
 | `RAZORPAY_KEY_ID/KEY_SECRET` | Payments (India) |
+| `RAZORPAY_WEBHOOK_SECRET` | Verifies Razorpay webhooks at `/api/webhooks/razorpay` — required for plan renewals (see `.env.example`) |
+| `PLAN_RECURRING_BILLING` | `true` (default): plans are auto-renewing Razorpay Subscriptions. `false`: sell them as one-time purchases |
+| `GST_ENABLED` / `TAX_LIABILITY_FROM` / `COMPANY_GSTIN` … | Taxes at checkout (18%, shown as "Taxes"), tax invoices, credit notes and returns — see [docs/TAXES.md](docs/TAXES.md) |
 | `STRIPE_*` | Payments (international) |
 | `GOOGLE_AI_API_KEY` / `GROQ_API_KEY` | AI features |
 | `GOOGLE_OAUTH_CLIENT_ID/SECRET` / `GOOGLE_CALENDAR_REDIRECT_URI` | Google sign-in & Calendar sync |

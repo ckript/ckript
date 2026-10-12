@@ -3,6 +3,7 @@ import { AuthContext } from "../context/AuthContext";
 import { useAuthModal } from "../context/AuthModalContext";
 import { useCurrency } from "../context/CurrencyContext";
 import api from "../services/api";
+import { mergeSessionUser, openRecurringPlanCheckout, recurringStateOf } from "../utils/planSubscriptionCheckout";
 
 /* ─────────────────────────────────────────────────────────────
    Single source of truth for the Writer's Business Model checkout
@@ -91,6 +92,8 @@ export function useWriterPlanCheckout() {
   const hasSilverAccess = useMemo(() => isActiveTier(user, "writer_silver"), [user]);
   const hasGoldAccess = useMemo(() => isActiveTier(user, "writer_gold"), [user]);
   const daysLeft = useMemo(() => daysLeftFrom(user?.subscription?.accessExpiresAt), [user]);
+  // Whether the active plan renews by itself (Razorpay Subscription) or lapses at expiry.
+  const billing = useMemo(() => recurringStateOf(user), [user]);
 
   const reset = useCallback(() => {
     setError("");
@@ -108,7 +111,7 @@ export function useWriterPlanCheckout() {
                        user, so a host modal can dismiss itself first
   */
   const startCheckout = useCallback(
-    async ({ tier, isRenew = false, cycle = "monthly", signInRedirect = "/pricing", onSuccess, onRequireAuth } = {}) => {
+    async ({ tier, isRenew = false, cycle = "monthly", signInRedirect = "/pricing", onSuccess, onRequireAuth, billing = null, saveBilling = false } = {}) => {
       const plan = WRITER_TIERS[tier];
       setError("");
       setMessage("");
@@ -140,7 +143,36 @@ export function useWriterPlanCheckout() {
           return;
         }
 
-        const { data: orderData } = await api.post("/payment/writer/create-razorpay-order", { tier, cycle, currency: currency || "INR" });
+        // Recurring first: a Razorpay Subscription that renews until cancelled. The one-time order
+        // below is only the fallback for when the server can't take a mandate right now.
+        const recurring = await openRecurringPlanCheckout({
+          plan: tier,
+          accessTier: plan.accessTier,
+          cycle,
+          currency: currency || "INR",
+          user,
+          billing,
+          saveBilling,
+          onVerifying: () => setMessage("Verifying payment..."),
+        });
+        if (recurring.outcome === "dismissed") {
+          setLoading("");
+          return;
+        }
+        if (recurring.outcome === "success") {
+          mergeSessionUser(recurring.data?.user, setUser);
+          setMessage(recurring.data?.message || "Payment successful!");
+          if (typeof onSuccess === "function") onSuccess(recurring.data);
+          return;
+        }
+        if (recurring.message) setMessage(recurring.message);
+
+        const { data: orderData } = await api.post("/payment/writer/create-razorpay-order", {
+          tier,
+          cycle,
+          currency: currency || "INR",
+          ...(billing ? { billing, saveBilling } : {}),
+        });
 
         const options = {
           key: orderData.key,
@@ -196,7 +228,7 @@ export function useWriterPlanCheckout() {
         setLoading("");
       }
     },
-    [authLoading, user, openAuthModal, setUser]
+    [authLoading, user, openAuthModal, setUser, currency]
   );
 
   return {
@@ -206,6 +238,7 @@ export function useWriterPlanCheckout() {
     hasSilverAccess,
     hasGoldAccess,
     daysLeft,
+    billing,
     loading, // "" | "silver" | "gold"
     error,
     message,

@@ -102,7 +102,21 @@ import {
   attachUploadedScriptMedia,
   canUploadPitchVideo,
 } from "../utils/scriptMedia.js";
-import { isValidRazorpaySignature, validateScriptHoldPayment } from "../utils/scriptHold.js";
+import { validateScriptHoldPayment } from "../utils/scriptHold.js";
+import { refundPayment } from "../utils/tax/refunds.js";
+import { readVerifiedOrder } from "../utils/razorpayCapture.js";
+import {
+  billingFromRequest,
+  checkoutBreakdown,
+  lineFor,
+  pickPriced,
+  priceCheckout,
+  priceWithInrFallback,
+  requestIp,
+  resolveCapturedTax,
+  saveQuote,
+} from "../utils/tax/checkout.js";
+import { allocate } from "../utils/tax/engine.js";
 import { VISITOR_PROFILE_SCRIPT_FIELDS } from "../utils/profileProjection.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -125,24 +139,6 @@ const getRazorpay = () => {
   return razorpayInstance;
 };
 
-// Read what a Razorpay order actually charged (buyer currency + amount + fx rate) so the buyer's
-// transaction records reality. Falls back to the INR base if the order can't be fetched. `inrTotal` is
-// the INR base used as the fallback charged amount.
-const readOrderCharge = async (orderId, inrTotal) => {
-  const fallback = { currency: "INR", chargedTotal: Number(inrTotal) || 0, fxRate: 1 };
-  try {
-    if (!orderId) return fallback;
-    const order = await getRazorpay().orders.fetch(orderId);
-    if (!order) return fallback;
-    return {
-      currency: String(order.currency || "INR").toUpperCase(),
-      chargedTotal: (Number(order.amount_paid) || Number(order.amount) || 0) / 100,
-      fxRate: Number(order.notes?.fxRate) || 1,
-    };
-  } catch {
-    return fallback;
-  }
-};
 
 const PUBLISHED_SCRIPT_STATUSES = ["published", "approved"];
 
@@ -157,13 +153,14 @@ const PROJECT_SPOTLIGHT_ACTIVATION_CREDITS = 310;
 const PROJECT_SPOTLIGHT_EXTENSION_CREDITS = 150;
 const PROJECT_SPOTLIGHT_DURATION_DAYS = 30;
 const SCRIPT_UPLOAD_TERMS_VERSION = process.env.SCRIPT_UPLOAD_TERMS_VERSION || "2026-03-24";
+// AI trailer packages, PRE-TAX, in MINOR units (paise / cents). Taxes are added at checkout.
 const TRAILER_PRICE_MATRIX = {
-  "30-480": { inr: 399, usd: 5 },
-  "30-720": { inr: 499, usd: 6 },
-  "60-480": { inr: 539, usd: 6 },
-  "60-720": { inr: 649, usd: 7 },
-  "90-480": { inr: 549, usd: 6.3 },
-  "90-720": { inr: 799, usd: 9 },
+  "30-480": { INR: 39900, USD: 500 },
+  "30-720": { INR: 49900, USD: 600 },
+  "60-480": { INR: 53900, USD: 600 },
+  "60-720": { INR: 64900, USD: 700 },
+  "90-480": { INR: 54900, USD: 630 },
+  "90-720": { INR: 79900, USD: 900 },
 };
 
 const WRITER_CONTACT_VIEWER_ROLES = ["investor", "producer", "director", "industry", "professional"];
@@ -186,8 +183,16 @@ const normalizeTrailerLayout = (value) => {
 
 const getTrailerPackagePricing = (duration, quality) => {
   const key = `${String(duration || "").trim()}-${String(quality || "").trim()}`;
-  return TRAILER_PRICE_MATRIX[key] || { inr: 0, usd: 0 };
+  const row = TRAILER_PRICE_MATRIX[key];
+  // `inr`/`usd` (major units) kept for the request note and older readers.
+  return row
+    ? { INR: row.INR, USD: row.USD, inr: row.INR / 100, usd: row.USD / 100 }
+    : { INR: 0, USD: 0, inr: 0, usd: 0 };
 };
+
+/** The trailer package as it reads on a checkout and an invoice line. */
+const trailerLineLabel = (duration, quality, format) =>
+  `AI trailer · ${String(duration || "").trim()}s · ${String(quality || "").trim()}px · ${normalizeTrailerLayout(format) === "portrait" ? "Portrait" : "Landscape"}`;
 
 const buildTrailerRequestNote = ({ duration, quality, format, currency, amount }) => {
   const layoutLabel = normalizeTrailerLayout(format) === "portrait" ? "Portrait" : "Landscape";
@@ -279,7 +284,9 @@ const getScriptPreviewPageTextByNumber = (script, pageNumber) => {
   return String(pageTexts[index] || "").trim();
 };
 const MAX_CUSTOM_INVESTOR_TERMS_LENGTH = 3000;
-const SCRIPT_PURCHASE_PLATFORM_TAX_RATE = 0.05;
+// The platform fee on a script purchase or hold. A FEE, not a tax: taxes (18%) are separate and are
+// charged on the price plus this fee.
+const SCRIPT_PURCHASE_PLATFORM_FEE_RATE = 0.05;
 const MAX_RIGHTS_CUSTOM_CONDITIONS_LENGTH = 5000;
 const MAX_SCRIPT_COMPLETION_FUTURE_PLANS_LENGTH = 300;
 const LEGAL_MARKETPLACE_DISCLAIMER = "Please accept all required terms before continuing.";
@@ -1009,10 +1016,12 @@ const buildAgreementTermsSnapshot = ({
       paymentStructureLabel: labels.paymentStructureLabel,
       baseAmount: pricing?.baseAmount || 0,
       baseAmountLabel: `INR ${Number(pricing?.baseAmount || 0).toFixed(2)}`,
-      platformCharges: pricing?.platformTaxAmount || 0,
-      platformChargesLabel: `INR ${Number(pricing?.platformTaxAmount || 0).toFixed(2)} (${Number(pricing?.platformTaxPercent || 0)}%)`,
-      totalAmount: pricing?.totalAmount || pricing?.baseAmount || 0,
-      totalAmountLabel: `INR ${Number(pricing?.totalAmount || pricing?.baseAmount || 0).toFixed(2)}`,
+      platformCharges: pricing?.platformFeeAmount || 0,
+      platformChargesLabel: `INR ${Number(pricing?.platformFeeAmount || 0).toFixed(2)} (${Number(pricing?.platformFeePercent || 0)}%)`,
+      taxes: pricing?.taxAmount || 0,
+      taxesLabel: pricing?.taxAmount ? `INR ${Number(pricing.taxAmount).toFixed(2)} (${Number(pricing.taxPercent || 18)}%)` : "",
+      totalAmount: pricing?.grossAmount || pricing?.totalAmount || pricing?.baseAmount || 0,
+      totalAmountLabel: `INR ${Number(pricing?.grossAmount || pricing?.totalAmount || pricing?.baseAmount || 0).toFixed(2)}`,
       royaltyTerms,
     },
     consentTimestamp: purchaseRequest?.termsAcceptance?.acceptedAt || now,
@@ -1131,18 +1140,82 @@ const expireActiveExclusiveLicenses = async ({ scriptId } = {}) => {
 
 const roundCurrencyAmount = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
+/**
+ * A script sale or hold in INR major units, PRE-TAX: the writer's price and the 5% platform fee.
+ * `totalAmount` is price + fee; taxes come on top (see scriptSaleLines and the tax snapshot).
+ */
 const getScriptPurchasePricing = (baseAmount) => {
   const cleanBaseAmount = roundCurrencyAmount(baseAmount);
-  const platformTaxAmount = roundCurrencyAmount(cleanBaseAmount * SCRIPT_PURCHASE_PLATFORM_TAX_RATE);
-  const totalAmount = roundCurrencyAmount(cleanBaseAmount + platformTaxAmount);
+  const platformFeeAmount = roundCurrencyAmount(cleanBaseAmount * SCRIPT_PURCHASE_PLATFORM_FEE_RATE);
+  const totalAmount = roundCurrencyAmount(cleanBaseAmount + platformFeeAmount);
 
   return {
     baseAmount: cleanBaseAmount,
-    platformTaxRate: SCRIPT_PURCHASE_PLATFORM_TAX_RATE,
-    platformTaxPercent: Math.round(SCRIPT_PURCHASE_PLATFORM_TAX_RATE * 100),
-    platformTaxAmount,
+    platformFeeRate: SCRIPT_PURCHASE_PLATFORM_FEE_RATE,
+    platformFeePercent: Math.round(SCRIPT_PURCHASE_PLATFORM_FEE_RATE * 100),
+    platformFeeAmount,
     totalAmount,
   };
+};
+
+/**
+ * The sale as priced lines in the CHARGED currency, pre-tax: the price and the platform fee. Taxes (18%)
+ * are then added on their sum — on the full amount, by decision. The INR total is converted ONCE (as the
+ * order always was) and split across the two lines, so the parts can never disagree with the whole.
+ */
+const scriptSaleLines = async (pricing, currency, { priceKind = "script_price", feeKind = "script_platform_fee", priceLabel = "" } = {}) => {
+  const cur = String(currency || "INR").toUpperCase();
+  let totalMinor = Math.round(Number(pricing.totalAmount || 0) * 100);
+  let fxRate = 1;
+  if (cur !== "INR") {
+    const converted = await convertInrToCurrency(pricing.totalAmount, cur);
+    totalMinor = toSubunits(converted.amount, cur);
+    fxRate = converted.fxRate;
+  }
+  const [priceMinor, feeMinor] = allocate(totalMinor, [
+    Math.round(Number(pricing.baseAmount || 0) * 100),
+    Math.round(Number(pricing.platformFeeAmount || 0) * 100),
+  ]);
+  return {
+    fxRate,
+    lines: [
+      lineFor(priceKind, priceMinor, priceLabel),
+      lineFor(feeKind, feeMinor, `Platform fee (${pricing.platformFeePercent}%)`),
+    ],
+  };
+};
+
+/** INR display figures for an agreement or notification, from a captured snapshot (or none). */
+const withTaxFigures = (pricing, tax) => {
+  if (!tax) return pricing;
+  const inr = tax.inr || {};
+  const taxMinor = Number(inr.cgstMinor || 0) + Number(inr.sgstMinor || 0) + Number(inr.igstMinor || 0);
+  return {
+    ...pricing,
+    taxAmount: taxMinor / 100,
+    taxPercent: Number(tax.rateBps || 0) / 100,
+    grossAmount: Number(inr.grossMinor || 0) / 100 || roundCurrencyAmount(Number(pricing.totalAmount || 0) + taxMinor / 100),
+  };
+};
+
+/**
+ * A writer-entered price in INR major units, rounded to paise, or null when it is not a usable amount.
+ * Empty means 0 (free). updateScript and uploadScript used to store Number(price) and the raw holdFee,
+ * so a negative, NaN or string price could reach a checkout.
+ */
+const MAX_WRITER_PRICE_INR = 10000000;
+const sanitizeWriterPrice = (value) => {
+  if (value === undefined || value === null || value === "") return 0;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || amount > MAX_WRITER_PRICE_INR) return null;
+  return Math.round(amount * 100) / 100;
+};
+
+/** The hold fee the writer set, or the platform default. One definition — it was written out five times. */
+const DEFAULT_HOLD_FEE_INR = 200;
+const scriptHoldFee = (script) => {
+  const fee = Number(script?.holdFee);
+  return Number.isFinite(fee) && fee > 0 ? roundCurrencyAmount(fee) : DEFAULT_HOLD_FEE_INR;
 };
 
 const sanitizeCustomInvestorTerms = (value = "") => String(value || "").trim();
@@ -2582,7 +2655,12 @@ export const updateScript = async (req, res) => {
       }
       if (coverImage !== undefined) script.coverImage = coverImage;
       if (premium !== undefined) script.premium = premium;
-      if (price !== undefined) script.price = Number(price);
+      if (price !== undefined) {
+        // A price is money a buyer will be charged (plus fee and taxes): never negative, never NaN.
+        const nextPrice = sanitizeWriterPrice(price);
+        if (nextPrice === null) return res.status(400).json({ message: "Enter a price between 0 and 1,00,00,000." });
+        script.price = nextPrice;
+      }
       if (collabVisibility !== undefined) {
         const normalizedCollabVisibility = String(collabVisibility || "").trim().toLowerCase();
         if (["open", "private"].includes(normalizedCollabVisibility)) {
@@ -2599,7 +2677,11 @@ export const updateScript = async (req, res) => {
       }
       if (tags !== undefined) script.tags = Array.isArray(tags) ? tags : [];
       if (budget !== undefined) script.budget = budget;
-      if (holdFee !== undefined) script.holdFee = holdFee;
+      if (holdFee !== undefined) {
+        const nextHoldFee = sanitizeWriterPrice(holdFee);
+        if (nextHoldFee === null || nextHoldFee <= 0) return res.status(400).json({ message: "Enter a hold fee greater than 0." });
+        script.holdFee = nextHoldFee;
+      }
     }
     if (isOwner && textContent !== undefined) script.textContent = textContent;
     if (isOwner && req.body.fountainContent !== undefined) script.fountainContent = req.body.fountainContent;
@@ -3035,11 +3117,11 @@ export const uploadScript = async (req, res) => {
       genre: genre || classification?.primaryGenre,
       contentType: getContentTypeFromFormat(format, contentType),
       premium: isPremium || premium || false,
-      price: price || 0,
+      price: sanitizeWriterPrice(price) ?? 0,
       roles: roles || [],
       tags: tags || [],
       budget,
-      holdFee: holdFee || 200,
+      holdFee: sanitizeWriterPrice(holdFee) || DEFAULT_HOLD_FEE_INR,
       collabVisibility: ["open", "private"].includes(String(collabVisibility || "").trim().toLowerCase())
         ? String(collabVisibility).trim().toLowerCase()
         : "private",
@@ -4743,44 +4825,35 @@ export const rejectScriptPurchase = async (req, res) => {
           return res.status(409).json({ message: "Payment reference missing for refund. Please contact support." });
         }
 
-        const razorpay = getRazorpay();
-        const refund = await razorpay.payments.refund(purchaseRequest.paymentGatewayPaymentId, {
-          amount: Math.round(amountToRefund * 100),
+        // The one refund path: Razorpay refund + credit note + ledger reversal (a NEW entry pointing at
+        // the original, never an edit of it), with the taxes reversed pro rata. The whole captured
+        // amount — taxes included — goes back. With no ledger original on file (an escrow from before
+        // the ledger), the frozen amount is refunded and no standalone negative row is invented.
+        const refunded = await refundPayment({
+          razorpay: getRazorpay(),
+          paymentId: purchaseRequest.paymentGatewayPaymentId,
+          // An escrow paid before the ledger existed is not on the books; refund what was frozen.
+          fallbackAmountMinor: Math.round(amountToRefund * 100),
+          reason: "Purchase request denied by writer",
           notes: {
             purchaseRequestId: purchaseRequest._id.toString(),
             scriptId: script._id.toString(),
             writerId: writer._id.toString(),
           },
+          source: "scriptController.rejectScriptPurchase",
         });
-        gatewayRefundId = refund?.id || "";
-
-        // A refund is a NEW entry pointing at the original, never an edit of it — both rows survive,
-        // so the history shows a sale that was refunded rather than a sale that vanished. With no
-        // original on file (a purchase captured before the ledger existed) there is nothing to
-        // reverse, and inventing a standalone negative row would corrupt the totals instead.
-        const originalEntry = await LedgerEntry.findOne({
-          providerPaymentId: purchaseRequest.paymentGatewayPaymentId,
-        });
-        if (originalEntry) {
-          await recordReversal({
-            original: originalEntry,
-            amountMinor: Math.round(amountToRefund * 100),
-            reason: "purchase request denied by writer",
-            providerPaymentId: gatewayRefundId || undefined,
-            source: "scriptController.rejectScriptPurchase",
-          });
-        } else {
-          console.warn(
-            "[ledger] refund for a payment with no ledger entry:",
-            purchaseRequest.paymentGatewayPaymentId,
-          );
+        if (!refunded.ok) {
+          return res.status(refunded.status || 502).json({ message: refunded.message });
         }
+        gatewayRefundId = refunded.refund?.id || "";
 
+        // What actually went back — the whole captured amount, taxes included, in the currency paid —
+        // rather than the pre-tax escrow figure.
         await Transaction.create({
           user: investor._id,
           type: "refund",
-          amount: amountToRefund,
-          currency: "INR",
+          amount: refunded.amountMinor ? refunded.amountMinor / 100 : amountToRefund,
+          currency: refunded.currency || "INR",
           status: "completed",
           description: `Refund to original payment method for rejected request: "${script.title}"`,
           reference: `PRR-RZP-${purchaseRequest.paymentGatewayPaymentId}`,
@@ -4793,6 +4866,7 @@ export const rejectScriptPurchase = async (req, res) => {
             gatewayPaymentId: purchaseRequest.paymentGatewayPaymentId,
             gatewayOrderId: purchaseRequest.paymentGatewayOrderId || "",
             gatewayRefundId,
+            taxMinor: refunded.taxMinor || 0,
             rejectionNote: note || "",
           },
         });
@@ -5908,13 +5982,28 @@ export const createScriptPurchaseOrder = async (req, res) => {
     // Create Razorpay order after writer approval. The INR total is server-authoritative; only the
     // buyer's currency is taken from the client, then converted live (with an INR fallback if a USD
     // order is rejected by the gateway).
-    const currency = resolveCurrency(req.body?.currency, req.user?.preferredCurrency);
-    const { amount: chargeMajor, fxRate } = await convertInrToCurrency(pricing.totalAmount, currency);
+    const billing = await billingFromRequest(req, req.user);
+    if (billing.error) return res.status(400).json({ message: billing.error, errors: billing.errors });
+    const buyer = await User.findById(req.user._id).select("name email address billingProfile preferredCurrency");
+    const currency = resolveCurrency(req.body?.currency, buyer?.preferredCurrency || req.user?.preferredCurrency);
+    // The price and the 5% platform fee, then 18% taxes on the FULL amount (by decision). With taxes
+    // switched off this is exactly the old price + fee.
+    const saleKinds = { priceLabel: `Script price · ${script.title}` };
+    const { lines, fxRate } = await scriptSaleLines(pricing, currency, saleKinds);
+    const { lines: inrLines } = await scriptSaleLines(pricing, "INR", saleKinds);
+    const priced = await priceWithInrFallback({
+      user: buyer || req.user,
+      currency,
+      lines,
+      inrLines,
+      billingOverride: billing.override,
+      ip: requestIp(req),
+    });
     const razorpay = getRazorpay();
     const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
-      amount: toSubunits(chargeMajor, currency),
+      amount: priced.requested.grossMinor,
       currency,
-      inrAmount: Math.round(pricing.totalAmount * 100),
+      inrAmount: priced.inr.grossMinor,
       receipt: `script_purchase_${Date.now()}`,
       notes: {
         userId: req.user._id.toString(),
@@ -5927,6 +6016,15 @@ export const createScriptPurchaseOrder = async (req, res) => {
         fxRate: String(fxRate),
         type: "script_purchase_after_approval",
       }
+    });
+
+    const chosen = pickPriced(priced, order.currency);
+    await saveQuote({
+      order,
+      user: buyer || req.user,
+      purpose: "script_purchase_after_approval",
+      subjectId: String(purchaseRequest._id),
+      priced: chosen,
     });
 
     res.json({
@@ -5943,6 +6041,10 @@ export const createScriptPurchaseOrder = async (req, res) => {
         creator: script.creator.name
       },
       pricing,
+      breakdown: checkoutBreakdown(chosen, {
+        currency: order.currency,
+        lines: String(order.currency).toUpperCase() === "INR" ? inrLines : lines,
+      }),
       purchaseRequestId: purchaseRequest._id,
       paymentDueAt,
       rightsSummary: {
@@ -5957,21 +6059,23 @@ export const createScriptPurchaseOrder = async (req, res) => {
   }
 };
 
-// Convert an INR pricing breakdown into the buyer's currency for DISPLAY (no order created). base+tax
-// are each converted then tax is derived as total−base so the parts always sum to the total.
-const buildCurrencyQuote = async (pricing, currency) => {
-  const { amount: totalAmount, fxRate } = await convertInrToCurrency(pricing.totalAmount, currency);
-  const { amount: baseAmount } = await convertInrToCurrency(pricing.baseAmount, currency);
-  const platformTaxAmount = Math.round((totalAmount - baseAmount) * 100) / 100;
+// Price a script sale or hold for DISPLAY in the buyer's currency (no order created): the price, the
+// platform fee and — when taxes are on — "Taxes (18%)" on their sum, with the total actually charged.
+const buildCurrencyQuote = async (pricing, currency, { user, req, kinds = {} } = {}) => {
+  const { lines, fxRate } = await scriptSaleLines(pricing, currency, kinds);
+  const priced = await priceCheckout({ user, lines, currency, ip: req ? requestIp(req) : "" });
+  const breakdown = checkoutBreakdown(priced, { currency, lines });
   return {
     currency,
     fxRate,
-    baseAmount,
-    platformTaxAmount,
-    totalAmount,
-    platformTaxPercent: pricing.platformTaxPercent,
+    baseAmount: lines[0].amountMinor / 100,
+    platformFeeAmount: lines[1].amountMinor / 100,
+    platformFeePercent: pricing.platformFeePercent,
+    taxAmount: breakdown.taxMinor / 100,
+    totalAmount: breakdown.totalMinor / 100,
     baseAmountInr: pricing.baseAmount,
     totalAmountInr: pricing.totalAmount,
+    breakdown,
   };
 };
 
@@ -5985,9 +6089,17 @@ export const getScriptPurchaseQuote = async (req, res) => {
     if (!scriptObjectId) return res.status(400).json({ message: "Invalid script ID." });
     const script = await Script.findById(scriptObjectId).select("price title");
     if (!script) return res.status(404).json({ message: "Script not found" });
-    const pricing = getScriptPurchasePricing(Math.max(0, Number(script.price || 0)));
+    // The price the buyer will actually be charged: their approved request's amount when there is one.
+    const approved = await ScriptPurchaseRequest.findOne({
+      script: scriptObjectId,
+      investor: req.user._id,
+      status: "approved",
+      paymentStatus: { $ne: "released" },
+    }).sort({ createdAt: -1 }).select("amount");
+    const pricing = getScriptPurchasePricing(Math.max(0, Number(approved?.amount || script.price || 0)));
     const currency = resolveCurrency(req.body?.currency, req.user?.preferredCurrency);
-    return res.json(await buildCurrencyQuote(pricing, currency));
+    const buyer = await User.findById(req.user._id).select("name email address billingProfile");
+    return res.json(await buildCurrencyQuote(pricing, currency, { user: buyer, req, kinds: { priceLabel: `Script price · ${script.title}` } }));
   } catch (error) {
     console.error("Purchase quote error:", error);
     return res.status(500).json({ message: "Failed to get price quote" });
@@ -6007,9 +6119,14 @@ export const getScriptHoldQuote = async (req, res) => {
     if (!scriptObjectId) return res.status(400).json({ message: "Invalid script ID." });
     const script = await Script.findById(scriptObjectId).select("holdFee title");
     if (!script) return res.status(404).json({ message: "Script not found" });
-    const pricing = getScriptPurchasePricing(Number(script.holdFee || 200));
+    const pricing = getScriptPurchasePricing(scriptHoldFee(script));
     const currency = resolveCurrency(req.body?.currency, req.user?.preferredCurrency);
-    return res.json(await buildCurrencyQuote(pricing, currency));
+    const buyer = await User.findById(req.user._id).select("name email address billingProfile");
+    return res.json(await buildCurrencyQuote(pricing, currency, {
+      user: buyer,
+      req,
+      kinds: { priceKind: "hold_price", feeKind: "hold_platform_fee", priceLabel: `30-day hold · ${script.title}` },
+    }));
   } catch (error) {
     console.error("Hold quote error:", error);
     return res.status(500).json({ message: "Failed to get price quote" });
@@ -6324,6 +6441,9 @@ export const verifyScriptPurchase = async (req, res) => {
     const baseAmount = Number(purchaseRequest.amount || script.price || 0);
     const isFreeAccessRequest = baseAmount <= 0;
 
+    // The verified capture (paid requests only): what Razorpay took, for this request, by this buyer.
+    let verifiedCapture = null;
+
     if (isFreeAccessRequest) {
       const hasAcceptedCoreTerms = Boolean(
         purchaseRequest?.termsAcceptance?.platformTermsAccepted &&
@@ -6374,22 +6494,25 @@ export const verifyScriptPurchase = async (req, res) => {
         });
       }
 
-      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-        return res.status(400).json({
-          message: "Payment verification payload is incomplete.",
-          success: false,
-        });
-      }
-
-      if (!verifyRazorpaySignature({
+      // A valid signature proves only that SOME payment on this account succeeded — a genuine ₹98
+      // competition payment used to satisfy this check. Prove from Razorpay's own records that it is the
+      // payment for THIS approved request, by this buyer, captured in full.
+      verifiedCapture = await readVerifiedOrder(getRazorpay(), {
         orderId: razorpay_order_id,
         paymentId: razorpay_payment_id,
         signature: razorpay_signature,
-      })) {
-        console.error("Signature verification failed");
-        return res.status(400).json({
-          message: "Payment verification failed - Invalid signature",
-          success: false
+        expectNotes: {
+          type: "script_purchase_after_approval",
+          userId: String(req.user._id),
+          scriptId: String(script._id),
+          purchaseRequestId: String(purchaseRequest._id),
+        },
+      });
+      if (!verifiedCapture.ok) {
+        return res.status(verifiedCapture.status || 400).json({
+          message: verifiedCapture.message,
+          success: false,
+          paymentPending: Boolean(verifiedCapture.pending),
         });
       }
     }
@@ -6398,7 +6521,7 @@ export const verifyScriptPurchase = async (req, res) => {
     const paymentReference = isFreeAccessRequest ? "" : `RZP-${razorpay_payment_id}`;
 
     const [investorDoc, writerDoc] = await Promise.all([
-      User.findById(req.user._id).select("name email sid role industryProfile"),
+      User.findById(req.user._id).select("name email sid role industryProfile address billingProfile"),
       User.findById(purchaseRequest.writer).select("name wallet"),
     ]);
 
@@ -6421,6 +6544,8 @@ export const verifyScriptPurchase = async (req, res) => {
 
     // Hoisted: both the buyer's Transaction row below and the ledger entry further down read it.
     let charge = null;
+    // The taxes inside what the buyer paid (null with taxes off, or a free request).
+    let purchaseTax = null;
 
     if (!isFreeAccessRequest) {
       const writerBalanceBefore = writerDoc.wallet.balance || 0;
@@ -6428,8 +6553,18 @@ export const verifyScriptPurchase = async (req, res) => {
       writerDoc.wallet.totalEarnings = (writerDoc.wallet.totalEarnings || 0) + pricing.baseAmount;
       await writerDoc.save();
 
-      // What the buyer was actually charged (their currency); the writer payout below stays INR.
-      charge = await readOrderCharge(razorpay_order_id, pricing.totalAmount);
+      // What the buyer was actually charged (their currency), from the verified capture; the writer
+      // payout above stays the INR price, untouched by taxes.
+      charge = verifiedCapture.charge;
+      purchaseTax = await resolveCapturedTax({
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        paidMinor: charge.amountMinor,
+        currency: charge.currency,
+        paidAt: charge.paidAt,
+        user: investorDoc || req.user,
+        lines: (await scriptSaleLines(pricing, charge.currency, { priceLabel: `Script price · ${script.title}` })).lines,
+      });
 
       await Transaction.create([
         {
@@ -6451,6 +6586,7 @@ export const verifyScriptPurchase = async (req, res) => {
             scriptId: script._id.toString(),
             razorpay_order_id,
             razorpay_payment_id,
+            taxMinor: purchaseTax?.totals?.taxMinor || 0,
           },
         },
         {
@@ -6522,7 +6658,7 @@ export const verifyScriptPurchase = async (req, res) => {
       await recordPayment({
         kind: "script_purchase",
         user: req.user._id,
-        amountMinor: Math.round(charge.chargedTotal * 100),
+        amountMinor: charge.amountMinor,
         currency: charge.currency,
         listPriceMinor: Math.round(pricing.totalAmount * 100),
         providerOrderId: razorpay_order_id,
@@ -6531,11 +6667,15 @@ export const verifyScriptPurchase = async (req, res) => {
         subjectId: script._id,
         label: script.title,
         source: "scriptController.verifyScriptPurchase",
+        tax: purchaseTax,
+        creatorPayoutMinor: Math.round(pricing.baseAmount * 100),
+        gatewayFeeMinor: charge.fee,
+        gatewayTaxMinor: charge.feeTax,
         metadata: {
           purchaseRequestId: String(purchaseRequest._id),
           writerId: String(purchaseRequest.writer),
           writerPayoutInr: pricing.baseAmount,
-          platformCommissionInr: pricing.platformTaxAmount,
+          platformFeeInr: pricing.platformFeeAmount,
         },
       });
     }
@@ -6547,7 +6687,7 @@ export const verifyScriptPurchase = async (req, res) => {
         purchaseRequest,
         writerUser: script.creator,
         buyerUser: investorDoc || req.user,
-        pricing,
+        pricing: withTaxFigures(pricing, purchaseTax),
         req,
       });
     } catch (agreementError) {
@@ -6567,110 +6707,58 @@ export const verifyScriptPurchase = async (req, res) => {
 
     let purchaseInvoice = null;
     if (!isFreeAccessRequest) {
-      purchaseInvoice = await Invoice.findOne({ paymentReference }).select("_id invoiceNumber pdfPath");
-    }
-    if (!purchaseInvoice && !isFreeAccessRequest) {
-      try {
-        const buyerLabel = getPurchaseRequesterLabel(investorDoc || req.user);
-        const createdInvoice = await Invoice.create({
-          paymentReference,
-          invoiceNumber: buildScriptPurchaseInvoiceNumber(razorpay_payment_id),
-          invoiceDate: new Date(),
-          creator: req.user._id,
-          creatorSid: investorDoc?.sid || req.user?.sid || "",
-          script: script._id,
-          scriptSid: script?.sid || "",
-          accessType: "premium",
-          scriptPrice: pricing.baseAmount,
-          platformFeeRate: pricing.platformTaxRate,
-          writerEarnsPerSale: pricing.baseAmount,
-          services: {
-            hosting: false,
-            evaluation: false,
-            aiTrailer: false,
-            trailerUpload: false,
-          },
-          totalCreditsRequired: 0,
-          creditsBalanceBefore: 0,
-          creditsBalanceAfter: 0,
-          rows: [
+      // The paid purchase goes through the shared issuer like every other surface: a tax invoice
+      // (CK/<FY>/<seq>) when taxes applied, the old-format document otherwise. It used to be built right
+      // here with its own numbering and no currency or amount — a USD buyer's invoice said "INR 0" — and
+      // it printed the writer's earnings on the buyer's document. Neither survives.
+      const rowSplit = purchaseTax
+        ? null
+        : allocate(charge.amountMinor, [Math.round(pricing.baseAmount * 100), Math.round(pricing.platformFeeAmount * 100)]);
+      const issued = await issueInvoice({
+        kind: "script",
+        user: investorDoc || req.user,
+        paymentReference,
+        providerPaymentId: razorpay_payment_id,
+        tax: purchaseTax,
+        supplyDate: charge.paidAt,
+        currency: charge.currency,
+        amountCharged: charge.chargedTotal,
+        accessType: "premium",
+        script: script._id,
+        scriptSid: script.sid || "",
+        scriptPrice: pricing.baseAmount,
+        detailLines: [
+          script.title,
+          `SID ${script.sid || "-"}`,
+          `Buyer: ${getPurchaseRequesterLabel(investorDoc || req.user)}`,
+          `Payment Ref: ${razorpay_payment_id}`,
+        ],
+        detailByKind: { script_price: `Full access to "${script.title}".` },
+        rows: rowSplit
+          ? [
             {
-              item: "Script Purchase",
+              item: "Script price",
               type: "Payment",
-              detail: `${buyerLabel} purchased full access for \"${script.title}\".`,
-              amountLabel: `INR ${pricing.baseAmount.toFixed(2)}`,
-              amountValue: pricing.baseAmount,
+              detail: `Full access to "${script.title}".`,
+              amountLabel: formatInvoiceMoney(rowSplit[0] / 100, charge.currency),
+              amountValue: rowSplit[0] / 100,
             },
             {
-              item: `Platform Commission (${pricing.platformTaxPercent}%)`,
-              type: "Tax",
-              detail: "Buyer-side commission charged on script purchase.",
-              amountLabel: `INR ${pricing.platformTaxAmount.toFixed(2)}`,
-              amountValue: pricing.platformTaxAmount,
+              item: `Platform fee (${pricing.platformFeePercent}%)`,
+              type: "Fee",
+              detail: "Platform fee on the script purchase.",
+              amountLabel: formatInvoiceMoney(rowSplit[1] / 100, charge.currency),
+              amountValue: rowSplit[1] / 100,
             },
-            {
-              item: "Total Paid",
-              type: "Total",
-              detail: "Total charged via payment gateway.",
-              amountLabel: `INR ${pricing.totalAmount.toFixed(2)}`,
-              amountValue: pricing.totalAmount,
-            },
-            {
-              item: "Payment Gateway",
-              type: "Reference",
-              detail: `Razorpay Payment ID: ${razorpay_payment_id}`,
-              amountLabel: "Verified",
-              amountValue: 0,
-            },
-            {
-              item: "Writer Payout",
-              type: "Settlement",
-              detail: `Credited to writer wallet: ${writerDoc.name || "Writer"}`,
-              amountLabel: `INR ${pricing.baseAmount.toFixed(2)}`,
-              amountValue: pricing.baseAmount,
-            },
-          ],
-        });
-
-        try {
-          const buyerIdentity = investorDoc || req.user;
-          const generatedPdf = await generateAndSaveInvoicePdf({
-            invoice: createdInvoice,
-            creatorName: buyerIdentity?.name,
-            creatorEmail: buyerIdentity?.email,
-            creatorSid: createdInvoice.creatorSid || buyerIdentity?.sid,
-            scriptTitle: script?.title,
-            scriptSid: createdInvoice.scriptSid || script?.sid,
-          });
-
-          if (generatedPdf?.relativePath) {
-            createdInvoice.pdfPath = generatedPdf.relativePath;
-            createdInvoice.pdfGeneratedAt = new Date();
-            await createdInvoice.save();
-          }
-        } catch (pdfError) {
-          console.error("Purchase invoice PDF generation error:", pdfError?.message || pdfError);
-        }
-
-        purchaseInvoice = {
-          _id: createdInvoice._id,
-          invoiceNumber: createdInvoice.invoiceNumber,
-          pdfPath: createdInvoice.pdfPath || "",
-        };
-      } catch (invoiceError) {
-        if (invoiceError?.code === 11000) {
-          const duplicateInvoice = await Invoice.findOne({ paymentReference }).select("_id invoiceNumber pdfPath");
-          purchaseInvoice = duplicateInvoice
-            ? {
-                _id: duplicateInvoice._id,
-                invoiceNumber: duplicateInvoice.invoiceNumber,
-                pdfPath: duplicateInvoice.pdfPath || "",
-              }
-            : null;
-        } else {
-          console.error("Purchase invoice creation error:", invoiceError);
-        }
-      }
+            totalRow(charge.chargedTotal, charge.currency),
+            gatewayRow(razorpay_payment_id),
+          ]
+          : [],
+        source: "scriptController.verifyScriptPurchase",
+      });
+      purchaseInvoice = issued
+        ? { _id: issued._id, invoiceNumber: issued.invoiceNumber, pdfPath: issued.pdfPath || "" }
+        : null;
     }
 
     await Notification.create({
@@ -6735,8 +6823,9 @@ export const verifyScriptPurchase = async (req, res) => {
       scriptId,
       buyerId: req.user._id,
       baseAmount: pricing.baseAmount,
-      platformTaxAmount: pricing.platformTaxAmount,
+      platformFeeAmount: pricing.platformFeeAmount,
       totalAmount: pricing.totalAmount,
+      taxMinor: purchaseTax?.totals?.taxMinor || 0,
       freeAccess: isFreeAccessRequest,
     });
 
@@ -6808,18 +6897,31 @@ export const createScriptHoldOrder = async (req, res) => {
       return res.status(403).json({ message: "Only industry professionals can hold scripts" });
     }
 
-    const holdFee = script.holdFee || 200;
+    const holdFee = scriptHoldFee(script);
     const holdPricing = getScriptPurchasePricing(holdFee);
 
-    // Create Razorpay order. INR total is server-authoritative; buyer currency converted live (with
-    // an INR fallback if a USD order is rejected).
+    const billing = await billingFromRequest(req, user);
+    if (billing.error) return res.status(400).json({ message: billing.error, errors: billing.errors });
+
+    // Create Razorpay order. The INR price + fee is server-authoritative; the buyer currency is converted
+    // live (with an INR fallback if a USD order is rejected), and 18% taxes are added on the full amount.
     const currency = resolveCurrency(req.body?.currency, user?.preferredCurrency);
-    const { amount: chargeMajor, fxRate } = await convertInrToCurrency(holdPricing.totalAmount, currency);
+    const holdKinds = { priceKind: "hold_price", feeKind: "hold_platform_fee", priceLabel: `30-day hold · ${script.title}` };
+    const { lines, fxRate } = await scriptSaleLines(holdPricing, currency, holdKinds);
+    const { lines: inrLines } = await scriptSaleLines(holdPricing, "INR", holdKinds);
+    const priced = await priceWithInrFallback({
+      user,
+      currency,
+      lines,
+      inrLines,
+      billingOverride: billing.override,
+      ip: requestIp(req),
+    });
     const razorpay = getRazorpay();
     const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
-      amount: toSubunits(chargeMajor, currency),
+      amount: priced.requested.grossMinor,
       currency,
-      inrAmount: Math.round(holdPricing.totalAmount * 100),
+      inrAmount: priced.inr.grossMinor,
       receipt: `script_hold_${Date.now()}`,
       notes: {
         userId: req.user._id.toString(),
@@ -6832,6 +6934,9 @@ export const createScriptHoldOrder = async (req, res) => {
         type: "script_hold"
       }
     });
+
+    const chosen = pickPriced(priced, order.currency);
+    await saveQuote({ order, user, purpose: "script_hold", subjectId: String(script._id), priced: chosen });
 
     res.json({
       orderId: order.id,
@@ -6847,6 +6952,10 @@ export const createScriptHoldOrder = async (req, res) => {
         creator: script.creator.name
       },
       pricing: holdPricing,
+      breakdown: checkoutBreakdown(chosen, {
+        currency: order.currency,
+        lines: String(order.currency).toUpperCase() === "INR" ? inrLines : lines,
+      }),
     });
   } catch (error) {
     console.error("Razorpay hold order creation error:", error);
@@ -6881,11 +6990,10 @@ export const verifyScriptHold = async (req, res) => {
       });
     }
 
-    const isAuthentic = isValidRazorpaySignature({
+    const isAuthentic = verifyRazorpaySignature({
       orderId: razorpay_order_id,
       paymentId: razorpay_payment_id,
       signature: razorpay_signature,
-      secret: process.env.RAZORPAY_KEY_SECRET,
     });
 
     if (!isAuthentic) {
@@ -6918,7 +7026,7 @@ export const verifyScriptHold = async (req, res) => {
     if (!user || !isFilmIndustryProfessionalRole(user)) {
       return res.status(403).json({ message: "Only industry professionals can hold scripts.", success: false });
     }
-    const fee = script.holdFee || 200;
+    const fee = scriptHoldFee(script);
     const pricing = getScriptPurchasePricing(fee);
     const razorpay = getRazorpay();
     const [order, payment] = await Promise.all([
@@ -6955,7 +7063,7 @@ export const verifyScriptHold = async (req, res) => {
     if (script.holdStatus === "held" || script.holdStatus === "sold" || script.isSold) {
       return res.status(409).json({ message: "This script is no longer available for a hold.", success: false, paymentCaptured: true });
     }
-    const platformCut = pricing.platformTaxAmount;
+    const platformCut = pricing.platformFeeAmount;
     const creatorPayout = pricing.baseAmount;
     const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
@@ -6984,6 +7092,15 @@ export const verifyScriptHold = async (req, res) => {
     // The buyer may have paid in a non-INR currency; read what was actually charged from the order so
     // the buyer transaction records the real currency/amount. Creator payout stays INR (see below).
     const charge = paymentCheck.charge;
+    const holdTax = await resolveCapturedTax({
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      paidMinor: charge.amountMinor,
+      currency: charge.currency,
+      paidAt: charge.paidAt,
+      user,
+      lines: (await scriptSaleLines(pricing, charge.currency, { priceKind: "hold_price", feeKind: "hold_platform_fee", priceLabel: `30-day hold · ${script.title}` })).lines,
+    });
 
     // Create transaction record for holder (payment)
     await Transaction.create({
@@ -7003,9 +7120,10 @@ export const verifyScriptHold = async (req, res) => {
         razorpay_order_id,
         razorpay_payment_id,
         holdEndDate: endDate,
-        buyerCommissionAmount: platformCut,
+        platformFeeAmount: platformCut,
         creatorPayout,
         totalPaidInr: pricing.totalAmount,
+        taxMinor: holdTax?.totals?.taxMinor || 0,
       }
     });
 
@@ -7031,7 +7149,7 @@ export const verifyScriptHold = async (req, res) => {
       relatedScript: script._id,
       metadata: {
         holderId: req.user._id.toString(),
-        buyerCommissionAmount: platformCut,
+        platformFeeAmount: platformCut,
         originalAmount: pricing.baseAmount,
         holdEndDate: endDate
       }
@@ -7043,13 +7161,15 @@ export const verifyScriptHold = async (req, res) => {
       type: "hold",
       from: req.user._id,
       script: script._id,
-      message: `${user.name} has placed a hold on "${script.title}" for ₹${pricing.totalAmount.toFixed(2)} (includes 5% platform commission, 30 days). You earn ₹${creatorPayout.toFixed(2)}.`,
+      message: `${user.name} has placed a 30-day hold on "${script.title}". You earn ₹${creatorPayout.toFixed(2)}.`,
     });
 
     await recordPayment({
       kind: "script_hold",
       user: req.user._id,
-      amountMinor: Math.round(charge.chargedTotal * 100),
+      tax: holdTax,
+      creatorPayoutMinor: Math.round(creatorPayout * 100),
+      amountMinor: charge.amountMinor,
       currency: charge.currency,
       listPriceMinor: Math.round(pricing.totalAmount * 100),
       providerOrderId: razorpay_order_id,
@@ -7061,7 +7181,7 @@ export const verifyScriptHold = async (req, res) => {
       metadata: {
         creatorId: String(script.creator?._id || script.creator || ""),
         creatorPayoutInr: creatorPayout,
-        platformCommissionInr: platformCut,
+        platformFeeInr: platformCut,
         holdEndDate: endDate,
       },
     });
@@ -7069,10 +7189,16 @@ export const verifyScriptHold = async (req, res) => {
     // A hold is a real purchase — thirty days of exclusivity, paid for — and it produced no
     // document at all. Non-fatal: the money is captured, so a missing invoice is something to fix
     // later, never a reason to tell the buyer their payment failed.
+    const holdRowSplit = holdTax
+      ? null
+      : allocate(charge.amountMinor, [Math.round(pricing.baseAmount * 100), Math.round(platformCut * 100)]);
     await issueInvoice({
       kind: "script_hold",
-      user: req.user,
+      user,
       paymentReference: `RZP-HOLD-${razorpay_payment_id}`,
+      providerPaymentId: razorpay_payment_id,
+      tax: holdTax,
+      supplyDate: charge.paidAt,
       currency: charge.currency,
       amountCharged: charge.chargedTotal,
       script: script._id,
@@ -7084,24 +7210,29 @@ export const verifyScriptHold = async (req, res) => {
         `Hold until: ${new Date(endDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`,
         `Payment Ref: ${razorpay_payment_id}`,
       ],
-      rows: [
-        {
-          item: "Script Hold (30 days)",
-          type: "Payment",
-          detail: `Exclusive hold on "${script.title}".`,
-          amountLabel: formatInvoiceMoney(pricing.baseAmount, "INR"),
-          amountValue: pricing.baseAmount,
-        },
-        {
-          item: "Platform Commission (5%)",
-          type: "Tax",
-          detail: "Buyer-side commission charged on the hold fee.",
-          amountLabel: formatInvoiceMoney(platformCut, "INR"),
-          amountValue: platformCut,
-        },
-        totalRow(charge.chargedTotal, charge.currency),
-        gatewayRow(razorpay_payment_id),
-      ],
+      detailByKind: { hold_price: `Exclusive 30-day hold on "${script.title}".` },
+      // Rows only for the old-format document (taxes off); a tax invoice builds its rows from the snapshot.
+      // Both lines are in the CHARGED currency now — they used to be INR next to a USD total.
+      rows: holdRowSplit
+        ? [
+          {
+            item: "Script Hold (30 days)",
+            type: "Payment",
+            detail: `Exclusive hold on "${script.title}".`,
+            amountLabel: formatInvoiceMoney(holdRowSplit[0] / 100, charge.currency),
+            amountValue: holdRowSplit[0] / 100,
+          },
+          {
+            item: "Platform fee (5%)",
+            type: "Fee",
+            detail: "Platform fee on the hold.",
+            amountLabel: formatInvoiceMoney(holdRowSplit[1] / 100, charge.currency),
+            amountValue: holdRowSplit[1] / 100,
+          },
+          totalRow(charge.chargedTotal, charge.currency),
+          gatewayRow(razorpay_payment_id),
+        ]
+        : [],
       source: "scriptController.verifyScriptHold",
     });
     console.log("Script hold completed:", { scriptId, holderId: req.user._id, fee });
@@ -7112,8 +7243,10 @@ export const verifyScriptHold = async (req, res) => {
       option,
       holdDetails: {
         fee: pricing.baseAmount,
-        buyerCommission: platformCut,
-        totalPaid: pricing.totalAmount,
+        platformFee: platformCut,
+        taxes: (holdTax?.totals?.taxMinor || 0) / 100,
+        currency: charge.currency,
+        totalPaid: charge.chargedTotal,
         platformCut,
         creatorPayout,
         expiresAt: endDate,
@@ -7338,17 +7471,30 @@ export const createScriptTrailerOrder = async (req, res) => {
     const selectedFormat = normalizeTrailerLayout(format);
     const pricing = getTrailerPackagePricing(selectedDuration, selectedQuality);
 
-    if (!pricing.inr || !pricing.usd) {
+    if (!pricing.INR || !pricing.USD) {
       return res.status(400).json({ message: "Invalid trailer package selected" });
     }
 
-    const buyerCurrency = resolveCurrency(currency, req.user?.preferredCurrency);
-    const chargeMajor = buyerCurrency === "USD" ? pricing.usd : pricing.inr;
+    const billing = await billingFromRequest(req, req.user);
+    if (billing.error) return res.status(400).json({ message: billing.error, errors: billing.errors });
+    const buyer = await User.findById(req.user._id).select("name email address billingProfile preferredCurrency");
+    const buyerCurrency = resolveCurrency(currency, buyer?.preferredCurrency || req.user?.preferredCurrency);
+    const trailerLabel = trailerLineLabel(selectedDuration, selectedQuality, selectedFormat);
+    const lines = [lineFor("ai_trailer", pricing[buyerCurrency], trailerLabel)];
+    const inrLines = [lineFor("ai_trailer", pricing.INR, trailerLabel)];
+    const priced = await priceWithInrFallback({
+      user: buyer || req.user,
+      currency: buyerCurrency,
+      lines,
+      inrLines,
+      billingOverride: billing.override,
+      ip: requestIp(req),
+    });
     const razorpay = getRazorpay();
     const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
-      amount: toSubunits(chargeMajor, buyerCurrency),
+      amount: priced.requested.grossMinor,
       currency: buyerCurrency,
-      inrAmount: toSubunits(pricing.inr, "INR"),
+      inrAmount: priced.inr.grossMinor,
       receipt: `trailer_${script._id.toString().slice(-8)}_${Date.now()}`,
       notes: {
         userId: req.user._id.toString(),
@@ -7362,8 +7508,15 @@ export const createScriptTrailerOrder = async (req, res) => {
       },
     });
 
+    const chosen = pickPriced(priced, order.currency);
+    await saveQuote({ order, user: buyer || req.user, purpose: "script_ai_trailer", subjectId: String(script._id), priced: chosen });
+
     return res.json({
       orderId: order.id,
+      breakdown: checkoutBreakdown(chosen, {
+        currency: order.currency,
+        lines: String(order.currency).toUpperCase() === "INR" ? inrLines : lines,
+      }),
       amount: order.amount,
       currency: order.currency,
       key: process.env.RAZORPAY_KEY_ID,
@@ -7382,16 +7535,39 @@ export const createScriptTrailerOrder = async (req, res) => {
   }
 };
 
+// @desc    What an AI trailer package costs, for the checkout step: price, Taxes (18%), total
+// @route   POST /api/scripts/:id/request-ai-trailer/quote
+// @access  Private (script owner)
+export const getScriptTrailerQuote = async (req, res) => {
+  try {
+    const { duration, quality, format, currency } = req.body || {};
+    const selectedDuration = String(duration || "").trim();
+    const selectedQuality = String(quality || "").trim();
+    const pricing = getTrailerPackagePricing(selectedDuration, selectedQuality);
+    if (!pricing.INR || !pricing.USD) return res.status(400).json({ message: "Invalid trailer package selected" });
+    const buyer = await User.findById(req.user._id).select("name email address billingProfile preferredCurrency");
+    const buyerCurrency = resolveCurrency(currency, buyer?.preferredCurrency || req.user?.preferredCurrency);
+    const lines = [lineFor("ai_trailer", pricing[buyerCurrency], trailerLineLabel(selectedDuration, selectedQuality, format))];
+    const priced = await priceCheckout({ user: buyer || req.user, lines, currency: buyerCurrency, ip: requestIp(req) });
+    return res.json({
+      currency: buyerCurrency,
+      listedMinor: pricing[buyerCurrency],
+      breakdown: checkoutBreakdown(priced, { currency: buyerCurrency, lines }),
+    });
+  } catch (error) {
+    console.error("Trailer quote error:", error);
+    return res.status(500).json({ message: "Failed to price this trailer package" });
+  }
+};
+
 export const verifyScriptTrailerPayment = async (req, res) => {
   try {
     const scriptId = req.params.id;
+    // Only the writer's note and the payment ids come from the body. The package, the currency and the
+    // amount are read from the verified Razorpay order — they used to be taken from the request, so a
+    // client could claim any duration, quality or price it liked.
     const {
       note,
-      duration,
-      quality,
-      format,
-      currency,
-      amount,
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
@@ -7403,14 +7579,6 @@ export const verifyScriptTrailerPayment = async (req, res) => {
 
     if (!process.env.RAZORPAY_KEY_SECRET) {
       return res.status(500).json({ message: "Payment system not configured" });
-    }
-
-    if (!verifyRazorpaySignature({
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id,
-      signature: razorpay_signature,
-    })) {
-      return res.status(400).json({ message: "Payment verification failed - Invalid signature" });
     }
 
     const script = await Script.findById(scriptId);
@@ -7427,12 +7595,34 @@ export const verifyScriptTrailerPayment = async (req, res) => {
       return res.status(400).json({ message: "AI trailer is already ready for this script" });
     }
 
-    const selectedDuration = String(duration || "").trim();
-    const selectedQuality = String(quality || "").trim();
-    const selectedFormat = normalizeTrailerLayout(format);
+    // Prove this is the payment for a trailer on THIS script by THIS writer, captured in full.
+    const verifiedTrailer = await readVerifiedOrder(getRazorpay(), {
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      signature: razorpay_signature,
+      expectNotes: { type: "script_ai_trailer", userId: String(req.user._id), scriptId: String(script._id) },
+    });
+    if (!verifiedTrailer.ok) {
+      return res.status(verifiedTrailer.status || 400).json({ message: verifiedTrailer.message, paymentPending: Boolean(verifiedTrailer.pending) });
+    }
+    const orderNotes = verifiedTrailer.order?.notes || {};
+    const selectedDuration = String(orderNotes.duration || "").trim();
+    const selectedQuality = String(orderNotes.quality || "").trim();
+    const selectedFormat = normalizeTrailerLayout(orderNotes.format);
     const pricing = getTrailerPackagePricing(selectedDuration, selectedQuality);
-    const paymentCurrency = String(currency || "INR").toUpperCase();
-    const paymentAmount = Number(amount || (paymentCurrency === "USD" ? pricing.usd : pricing.inr) || 0);
+    const trailerCharge = verifiedTrailer.charge;
+    const paymentCurrency = trailerCharge.currency;
+    const paymentAmount = trailerCharge.chargedTotal;
+    const trailerBuyer = await User.findById(req.user._id).select("name email sid address billingProfile");
+    const trailerTax = await resolveCapturedTax({
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      paidMinor: trailerCharge.amountMinor,
+      currency: trailerCharge.currency,
+      paidAt: trailerCharge.paidAt,
+      user: trailerBuyer || req.user,
+      lines: [lineFor("ai_trailer", pricing[trailerCharge.currency] || pricing.INR, trailerLineLabel(selectedDuration, selectedQuality, selectedFormat))],
+    });
 
     script.services = {
       hosting: script.services?.hosting ?? true,
@@ -7467,16 +7657,17 @@ export const verifyScriptTrailerPayment = async (req, res) => {
     };
     await script.save();
 
-    // The ledger reads the ORDER, not the request body. `paymentAmount` above falls back to a
-    // client-supplied `amount`, which must never become a revenue figure — what Razorpay captured is
-    // the only number an accountant can rely on.
-    const trailerCharge = await readOrderCharge(razorpay_order_id, pricing.inr);
+    // The ledger reads the verified ORDER — what Razorpay captured is the only number an accountant
+    // can rely on.
     await recordPayment({
       kind: "ai_trailer",
       user: req.user._id,
-      amountMinor: Math.round(trailerCharge.chargedTotal * 100),
+      tax: trailerTax,
+      gatewayFeeMinor: trailerCharge.fee,
+      gatewayTaxMinor: trailerCharge.feeTax,
+      amountMinor: trailerCharge.amountMinor,
       currency: trailerCharge.currency,
-      listPriceMinor: Math.round(Number(pricing.inr || 0) * 100),
+      listPriceMinor: Number(pricing[trailerCharge.currency] || pricing.INR || 0),
       providerOrderId: razorpay_order_id,
       providerPaymentId: razorpay_payment_id,
       subjectType: "Script",
@@ -7487,8 +7678,6 @@ export const verifyScriptTrailerPayment = async (req, res) => {
         duration: selectedDuration,
         quality: selectedQuality,
         format: selectedFormat,
-        claimedAmount: paymentAmount,
-        claimedCurrency: paymentCurrency,
       },
     });
 
@@ -7496,8 +7685,11 @@ export const verifyScriptTrailerPayment = async (req, res) => {
     // see. Same non-fatal contract as every other invoice call.
     await issueInvoice({
       kind: "ai_trailer",
-      user: req.user,
+      user: trailerBuyer || req.user,
       paymentReference: `RZP-TRL-${razorpay_payment_id}`,
+      providerPaymentId: razorpay_payment_id,
+      tax: trailerTax,
+      supplyDate: trailerCharge.paidAt,
       currency: trailerCharge.currency,
       amountCharged: trailerCharge.chargedTotal,
       script: script._id,

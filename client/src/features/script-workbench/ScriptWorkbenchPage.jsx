@@ -174,7 +174,7 @@ function PurchaseDialog({ vm, open, onClose }) {
       {step === 1 ? (
         <>
           <p className="swb-prose">You are asking {text(vm.script?.creator?.name, "the writer")} to approve purchase access to “{text(vm.script?.title)}”. No payment is taken now.</p>
-          <div className="swb-purchase-amt"><small>After approval</small><strong>{money(Number(vm.script?.price || 0) * 1.05)}</strong><span>Script {money(vm.script?.price)} + 5% buyer commission</span></div>
+          <div className="swb-purchase-amt"><small>Script price</small><strong>{money(vm.script?.price)}</strong><span>Plus a 5% platform fee and taxes, shown in full at checkout after the writer approves</span></div>
           <dl className="swb-kv"><div><dt>Rights</dt><dd>{RIGHTS_LABELS[rights?.rightsType] || "Not specified"}</dd></div><div><dt>Payment window</dt><dd>72 hours</dd></div><div><dt>Full access</dt><dd>After verified payment</dd></div></dl>
           <div className="swb-modal-actions"><button type="button" className="swb-btn" onClick={close}>Cancel</button><button type="button" className="swb-btn swb-btn--primary" onClick={() => setStep(2)}>Review conditions <ChevronRight size={14} /></button></div>
         </>

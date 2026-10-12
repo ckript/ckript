@@ -8,6 +8,20 @@ import Script from "../models/Script.js";
 import Invoice from "../models/Invoice.js";
 import { issueInvoice, totalRow, gatewayRow } from "../utils/invoiceIssue.js";
 import { recordPayment } from "../utils/ledger.js";
+import { verifyRazorpaySignature } from "../utils/razorpaySignature.js";
+import { taxChargingEnabled } from "../config/tax.js";
+import {
+  checkoutBreakdown,
+  lineFor,
+  loadQuote,
+  pickPriced,
+  priceCheckout,
+  priceWithInrFallback,
+  requestIp,
+  resolveCapturedTax,
+  saveQuote,
+} from "../utils/tax/checkout.js";
+import { normalizeBillingInput } from "../utils/tax/billing.js";
 import User from "../models/User.js";
 import { createNotification, resolveClientBaseUrl, sendEmailNotification } from "../utils/notify.js";
 import { buildSubmissionMail } from "../utils/competitionMail.js";
@@ -625,21 +639,35 @@ const REGISTRATION_RECEIPT_PREFIX = "reg_";
  * payment did not work, and they would pay twice. A missing invoice is recoverable later; a lost
  * registration is not.
  */
-const issueRegistrationInvoice = async ({ user, competition, entry, paymentId, amountMajor, currency }) => {
+const issueRegistrationInvoice = async ({ user, competition, entry, paymentId, orderId = "", amountMajor, currency, paidAt = null }) => {
   const paymentReference = String(paymentId || "").trim();
   if (!paymentReference) return null;
 
-  const existing = await Invoice.findOne({ paymentReference }).select("_id invoiceNumber pdfPath");
-  if (existing) return existing;
+  // The taxes inside the entry fee: the quote stored when the order was created, or (an order priced
+  // before taxes switched on) carved out of what was paid. Null with taxes off.
+  const amountMinor = Math.round(Number(amountMajor) * 100);
+  const taxUser = await User.findById(user._id).select("name email sid address billingProfile");
+  const tax = await resolveCapturedTax({
+    orderId,
+    paymentId: paymentReference,
+    paidMinor: amountMinor,
+    currency,
+    paidAt: paidAt || new Date(),
+    user: taxUser || user,
+    lines: [lineFor("competition_registration", competitionRegistrationCharge(competition, currency).amountMinor, `Entry fee · ${competition.name}`)],
+  });
 
-  // The ledger entry is idempotent on the payment id, so a retried checkout callback that finds no
-  // invoice yet still cannot produce two revenue rows.
+  // ALWAYS written, before the invoice check: the ledger is idempotent on the payment id, and the old
+  // order (invoice first, return early) meant a payment whose invoice already existed but whose ledger
+  // write had failed could never be booked again.
   await recordPayment({
     kind: "competition_registration",
     user: user._id,
-    amountMinor: Math.round(Number(amountMajor) * 100),
+    tax,
+    amountMinor,
     currency,
     listPriceMinor: competitionRegistrationCharge(competition, currency).amountMinor,
+    providerOrderId: String(orderId || ""),
     providerPaymentId: paymentReference,
     subjectType: "Competition",
     subjectId: competition._id,
@@ -648,10 +676,16 @@ const issueRegistrationInvoice = async ({ user, competition, entry, paymentId, a
     metadata: { eventId: entry?.eventId || "" },
   });
 
+  const existing = await Invoice.findOne({ paymentReference }).select("_id invoiceNumber pdfPath");
+  if (existing) return existing;
+
   return issueInvoice({
     kind: "competition_registration",
-    user,
+    user: taxUser || user,
     paymentReference,
+    providerPaymentId: paymentReference,
+    tax,
+    supplyDate: paidAt || new Date(),
     currency,
     amountCharged: amountMajor,
     competition: competition._id,
@@ -758,8 +792,10 @@ const finalizeRegistrationPayment = async ({ competition, user, intent, order, r
     competition,
     entry,
     paymentId: captured.id,
+    orderId: intent.orderId,
     amountMajor: standing.amountMajor,
     currency: standing.currency,
+    paidAt: captured.created_at ? new Date(Number(captured.created_at) * 1000) : now,
   });
   if (invoice?._id && String(entry.payment?.invoice || "") !== String(invoice._id)) {
     entry.payment.invoice = invoice._id;
@@ -789,6 +825,39 @@ const finalizeRegistrationPayment = async ({ competition, user, intent, order, r
       registrationComplete: true,
     },
   };
+};
+
+// POST /api/competitions/:id/registration-quote (protect) — the entry fee for the checkout step:
+// listed fee, Taxes (18%), total. No order is created.
+export const getRegistrationQuote = async (req, res) => {
+  try {
+    const competition = await loadOpenCompetitionById(req.params.id);
+    if (!competition) return res.status(404).json({ message: "Competition not found." });
+    if (competitionRegistrationMode(competition) !== COMPETITION_REGISTRATION_MODE.PAID) {
+      return res.json({ freeRegistration: true });
+    }
+    const { resolveCurrency } = await import("../utils/currencyFx.js");
+    const currency = resolveCurrency(req.body?.currency, req.user.preferredCurrency);
+    const charge = competitionRegistrationCharge(competition, currency);
+    const entrant = await User.findById(req.user._id).select("name email address billingProfile");
+    const country = String(req.body?.country || "").trim();
+    const lines = [lineFor("competition_registration", charge.amountMinor, `Entry fee · ${competition.name}`)];
+    const priced = await priceCheckout({
+      user: entrant || req.user,
+      lines,
+      currency: charge.currency,
+      billingOverride: country ? { country } : null,
+      ip: requestIp(req),
+    });
+    return res.json({
+      currency: charge.currency,
+      listedMinor: charge.amountMinor,
+      breakdown: checkoutBreakdown(priced, { currency: charge.currency, lines }),
+    });
+  } catch (error) {
+    console.error("[competition] registration quote failed:", error);
+    return res.status(500).json({ message: "Could not price the entry fee." });
+  }
 };
 
 export const createRegistrationOrder = async (req, res) => {
@@ -846,6 +915,20 @@ export const createRegistrationOrder = async (req, res) => {
     const requestedCharge = competitionRegistrationCharge(competition, requestedCurrency);
     const nowAccepted = new Date();
 
+    // Billing evidence: explicit billing details if sent, otherwise the country on the entry form.
+    let billingOverride = null;
+    if (req.body?.billing && typeof req.body.billing === "object") {
+      const billing = normalizeBillingInput(req.body.billing);
+      if (!billing.ok) return res.status(400).json({ message: "Check your billing details.", errors: billing.errors });
+      billingOverride = billing.billing;
+    } else if (normalized.registration.country) {
+      billingOverride = { country: normalized.registration.country };
+    }
+    const entrant = await User.findById(req.user._id).select("name email address billingProfile");
+    const feeLabel = `Entry fee · ${competition.name}`;
+    const feeLines = [lineFor("competition_registration", requestedCharge.amountMinor, feeLabel)];
+    const inrFeeLines = [lineFor("competition_registration", competitionRegistrationCharge(competition, "INR").amountMinor, feeLabel)];
+
     let intent;
     try {
       intent = await CompetitionRegistrationIntent.findOneAndUpdate(
@@ -902,13 +985,28 @@ export const createRegistrationOrder = async (req, res) => {
         if (completed.ok) return res.json(completed.data);
         return res.status(completed.pending ? 409 : 400).json({ message: completed.message });
       }
-      return res.json({
-        orderId: intent.orderId,
-        amount: intent.amountMinor,
-        currency: intent.currency,
-        key: process.env.RAZORPAY_KEY_ID,
-        reusedOrder: true,
-      });
+      const existingQuote = await loadQuote(intent.orderId);
+      // An unpaid order created before taxes switched on is NOT reused: it would charge the pre-tax fee.
+      // Drop it and price a fresh one below.
+      if (taxChargingEnabled() && !existingQuote) {
+        intent = await CompetitionRegistrationIntent.findOneAndUpdate(
+          { _id: intent._id, orderId: intent.orderId },
+          { $set: { orderId: "", state: "draft" } },
+          { new: true },
+        );
+        if (!intent) return res.status(409).json({ message: "Your payment order is being updated. Try again in a moment." });
+      } else {
+        return res.json({
+          orderId: intent.orderId,
+          amount: intent.amountMinor,
+          currency: intent.currency,
+          key: process.env.RAZORPAY_KEY_ID,
+          reusedOrder: true,
+          breakdown: existingQuote?.tax
+            ? checkoutBreakdown({ breakdown: null, preTaxMinor: existingQuote.preTaxMinor, grossMinor: existingQuote.grossMinor, tax: existingQuote.tax }, { currency: intent.currency })
+            : checkoutBreakdown({ preTaxMinor: intent.amountMinor, grossMinor: intent.amountMinor }, { currency: intent.currency, lines: feeLines }),
+        });
+      }
     }
 
     const lockToken = crypto.randomUUID();
@@ -940,12 +1038,19 @@ export const createRegistrationOrder = async (req, res) => {
       return res.status(409).json({ message: "Your payment order is already being prepared. Try again in a moment." });
     }
 
-    const inrAmount = competitionRegistrationCharge(competition, "INR").amountMinor;
+    const priced = await priceWithInrFallback({
+      user: entrant || req.user,
+      currency: requestedCharge.currency,
+      lines: feeLines,
+      inrLines: inrFeeLines,
+      billingOverride,
+      ip: requestIp(req),
+    });
 
     const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
-      amount: requestedCharge.amountMinor,
+      amount: priced.requested.grossMinor,
       currency: requestedCharge.currency,
-      inrAmount,
+      inrAmount: priced.inr.grossMinor,
       receipt: `${REGISTRATION_RECEIPT_PREFIX}${req.user._id.toString().substring(18)}_${Date.now()}`,
       // Stamped so verification can prove this order was created HERE, for THIS competition, by
       // THIS user. Razorpay returns notes on orders.fetch, so it needs no storage of our own — and
@@ -958,6 +1063,9 @@ export const createRegistrationOrder = async (req, res) => {
     });
 
     if (!order) return res.status(500).json({ message: "Failed to create Razorpay order" });
+
+    const chosen = pickPriced(priced, order.currency);
+    await saveQuote({ order, user: entrant || req.user, purpose: "competition_registration", subjectId: String(competition._id), priced: chosen });
 
     intent = await CompetitionRegistrationIntent.findOneAndUpdate(
       { _id: claimedIntent._id, lockToken },
@@ -981,6 +1089,10 @@ export const createRegistrationOrder = async (req, res) => {
       currency: intent.currency,
       key: process.env.RAZORPAY_KEY_ID,
       fellBackToINR,
+      breakdown: checkoutBreakdown(chosen, {
+        currency: order.currency,
+        lines: String(order.currency).toUpperCase() === "INR" ? inrFeeLines : feeLines,
+      }),
     });
   } catch (error) {
     if (claimedIntent?._id) {
@@ -1012,15 +1124,9 @@ export const verifyRegistrationPayment = async (req, res) => {
       return res.status(400).json({ message: "This payment does not belong to this registration." });
     }
 
-    // Razorpay requires the SERVER'S order id for verification. Compare fixed-size buffers so a
-    // bad signature does not leak a prefix through timing.
-    const generatedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(`${intent.orderId}|${razorpay_payment_id}`)
-      .digest();
-    const receivedSignature = Buffer.from(String(razorpay_signature), "hex");
-    if (receivedSignature.length !== generatedSignature.length
-      || !crypto.timingSafeEqual(generatedSignature, receivedSignature)) {
+    // Razorpay requires the SERVER'S order id for verification. One implementation of the check for
+    // every flow (constant-time; see utils/razorpaySignature.js).
+    if (!verifyRazorpaySignature({ orderId: intent.orderId, paymentId: String(razorpay_payment_id), signature: String(razorpay_signature) })) {
       return res.status(400).json({ message: "Payment verification failed: Invalid signature" });
     }
 

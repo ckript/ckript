@@ -15,6 +15,7 @@ import {
   CHECKOUT_STANDING,
   formatInr,
 } from "../../../../pages/script-detail/checkout";
+import { breakdownRows, payLabel } from "../../../../utils/taxes";
 import {
   modificationLabel,
   negotiationLabel,
@@ -32,18 +33,30 @@ const text = (value) => String(value ?? "").trim();
  * access fee") which stays as `note` rather than becoming a row, because a phone reading a table of
  * money should be able to find the total by position, not by reading each label.
  */
-export const buildAmountRows = (pricing = {}) => ([
-  { key: "base", label: "Screenplay access fee", value: formatInr(pricing.baseAmount), tone: "normal" },
-  {
-    key: "commission",
-    label: `Platform commission (${Number(pricing.platformTaxPercent ?? 5)}%)`,
-    value: formatInr(pricing.platformTaxAmount),
-    tone: "normal",
-  },
-  { key: "total", label: "Total payable", value: formatInr(pricing.totalAmount), tone: "total" },
-]);
+export const buildAmountRows = (pricing = {}, breakdown = null) => {
+  // The server's quote, when there is one: price, platform fee, Taxes (18%), total.
+  if (breakdown) {
+    return breakdownRows(breakdown).map((row) => ({
+      key: row.kind === "line" ? row.key : row.kind,
+      label: row.label,
+      value: row.value,
+      tone: row.kind === "total" ? "total" : "normal",
+    }));
+  }
+  return [
+    { key: "base", label: "Script price", value: formatInr(pricing.baseAmount), tone: "normal" },
+    {
+      key: "fee",
+      label: `Platform fee (${Number(pricing.platformFeePercent ?? 5)}%)`,
+      value: formatInr(pricing.platformFeeAmount),
+      tone: "normal",
+    },
+    { key: "total", label: "Total payable", value: formatInr(pricing.totalAmount), tone: "total" },
+  ];
+};
 
-export const AMOUNT_NOTE = "The writer receives the full access fee. The platform commission is charged with it at checkout.";
+export const AMOUNT_NOTE = "The writer receives the full script price. The platform fee is paid by the buyer on top.";
+export const AMOUNT_NOTE_TAXED = "The writer receives the full script price. The platform fee and taxes are paid by the buyer on top.";
 
 /**
  * The line that reconciles what we promised with what the gateway will take.
@@ -148,7 +161,7 @@ export const buildAcceptanceRows = (script = {}) => {
  * the payment sheet" and "confirming your payment" are different waits and a phone that says the
  * wrong one invites a second tap on a live charge.
  */
-export const describePayControl = ({ standing = {}, processing = false, recovering = false } = {}) => {
+export const describePayControl = ({ standing = {}, processing = false, recovering = false, breakdown = null } = {}) => {
   if (recovering) return { label: "Finishing your payment…", pending: true };
   if (standing.id === CHECKOUT_STANDING.FREE) {
     return processing
@@ -156,7 +169,8 @@ export const describePayControl = ({ standing = {}, processing = false, recoveri
       : { label: "Confirm and unlock", pending: false };
   }
   if (processing) return { label: "Opening the payment sheet…", pending: true };
-  return { label: `Pay ${formatInr(standing?.pricing?.totalAmount)}`, pending: false };
+  // The server's total (taxes included) once it is known; the estimate only until then.
+  return { label: breakdown ? payLabel(breakdown) : `Pay ${formatInr(standing?.pricing?.totalAmount)}`, pending: false };
 };
 
 /**

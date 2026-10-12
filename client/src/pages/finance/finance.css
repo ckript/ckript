@@ -1,0 +1,92 @@
+/* ═══════════════════════ CKRIPT FINANCE — TAX VIEWS ═══════════════════════
+   The few pieces the shared admin kit has no class for. Scoped under .ckad, tokens only, so the
+   finance page follows the shell's light/dark switch like every other admin surface.
+
+   The 375px rule: tables scroll INSIDE their container and the page itself never scrolls sideways.
+   DataTable already does that (.adtb-scroll); .fin-scroll is the same for the hand-built tables. */
+
+/* Section-header controls (date pickers, filters, export) wrap rather than push the page wide. */
+.ckad .fin-page .adsc-actions { flex-wrap: wrap; }
+
+/* A grid item's min-width defaults to its content, so one wide table would widen the whole page. */
+.ckad .fin-grid > * { min-width: 0; }
+
+.ckad .fin-scroll { overflow-x: auto; max-width: 100%; }
+.ckad .fin-scroll .adtb-th,
+.ckad .fin-scroll .adtb-td { white-space: nowrap; }
+
+/* Space between the stacked panels of a long tab (Taxes). */
+.ckad .fin-block { margin-top: var(--ad-s8); }
+
+/* Per-currency card groups on the overview: one heading per currency, never one shared total. */
+.ckad .fin-currency {
+  margin: var(--ad-s2) 0 var(--ad-s2);
+  font-size: var(--ad-t-micro);
+  font-weight: var(--ad-fw-semi);
+  letter-spacing: var(--ad-track-caps);
+  text-transform: uppercase;
+  color: var(--ad-ink-3);
+}
+
+/* The small print under a card figure (CGST · SGST · IGST, document counts). */
+.ckad .fin-breakdown {
+  margin: var(--ad-s1) 0 0;
+  font-size: var(--ad-t-xs);
+  color: var(--ad-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ckad .fin-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ad-s3);
+  flex-wrap: wrap;
+  padding: var(--ad-s3) var(--ad-s4);
+  margin-bottom: var(--ad-s4);
+  border: 1px solid var(--ad-line);
+  border-radius: var(--ad-r-lg);
+  background: var(--ad-surface-2);
+  font-size: var(--ad-t-sm);
+  color: var(--ad-ink-2);
+  line-height: var(--ad-lh-body);
+}
+.ckad .fin-banner strong { color: var(--ad-ink); }
+.ckad .fin-banner--warn { background: var(--ad-warn-soft); border-color: var(--ad-warn-line); }
+.ckad .fin-banner--danger { background: var(--ad-danger-soft); border-color: var(--ad-danger-line); }
+.ckad .fin-banner--info { background: var(--ad-info-soft); border-color: var(--ad-info-line); }
+
+.ckad .fin-danger-text { color: var(--ad-danger); font-weight: var(--ad-fw-medium); }
+
+/* A document number that opens its PDF: reads as the number, behaves as a button. */
+.ckad .fin-linkbtn {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--ad-font-mono);
+  color: var(--ad-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ckad .fin-linkbtn:hover { color: var(--ad-accent); }
+
+/* Segmented control (document register: tax invoices / credit notes / cancelled). */
+.ckad .fin-seg { display: inline-flex; flex-wrap: wrap; gap: var(--ad-s1); }
+.ckad .fin-seg .adb[aria-pressed="true"] {
+  background: var(--ad-accent-soft);
+  border-color: var(--ad-accent-line);
+  color: var(--ad-accent-ink);
+}
+
+.ckad .fin-check {
+  display: flex;
+  align-items: center;
+  gap: var(--ad-s2);
+  font-size: var(--ad-t-sm);
+  color: var(--ad-ink-2);
+  cursor: pointer;
+}
+
+.ckad .fin-stack { display: flex; flex-direction: column; gap: var(--ad-s4); }
+.ckad .fin-row { display: flex; align-items: center; gap: var(--ad-s2); flex-wrap: wrap; }

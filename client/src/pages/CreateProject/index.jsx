@@ -1446,21 +1446,21 @@ const CreateProject = ({
       amount: formatCurrency(effectivePrice),
     },
     {
-      item: `Platform Commission (${Math.round(BUYER_COMMISSION_RATE * 100)}%)`,
-      detail: "Added on top of the script access fee at checkout",
-      type: "Platform Commission",
+      item: `Platform fee (${Math.round(BUYER_COMMISSION_RATE * 100)}%)`,
+      detail: "Paid by the buyer on top of the script price",
+      type: "Platform Fee",
       amount: formatCurrency(buyerCommissionAmount),
     },
 
     {
-      item: "Film Industry Professional Pays at Checkout",
-      detail: "Script fee + platform commission",
+      item: "Buyer pays (before taxes)",
+      detail: "Script price + platform fee; taxes of 18% are added at checkout",
       type: "Checkout Total",
       amount: formatCurrency(buyerTotalPayable),
     },
     {
       item: "Projected Writer Payout",
-      detail: "Writer receives full script access fee",
+      detail: "You receive the full script price — the fee and taxes never reduce it",
       type: "Future Earnings",
       amount: formatCurrency(writerPayout),
     },

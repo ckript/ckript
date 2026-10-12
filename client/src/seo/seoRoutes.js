@@ -95,6 +95,14 @@ const staticSeoRoutes = [
     priority: "0.5",
   },
   {
+    path: "/refund-policy",
+    title: "Refund & Cancellation Policy | Ckript",
+    description:
+      "How refunds and cancellations work on Ckript: plans, script purchases, consultations and competition entries.",
+    changefreq: "yearly",
+    priority: "0.5",
+  },
+  {
     path: "/registration-privacy-policy",
     title: "Registration Privacy Policy | Ckript",
     description:

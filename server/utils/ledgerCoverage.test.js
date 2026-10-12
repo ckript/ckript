@@ -34,7 +34,8 @@ const handlerBody = (source, name) => {
   return source.slice(start, next === -1 ? source.length : next);
 };
 
-const LEDGER_CALL = /record(Payment|Grant|Reversal)\s*\(/;
+// refundPayment (utils/tax/refunds.js) writes the reversal itself, so it counts as reaching the ledger.
+const LEDGER_CALL = /record(Payment|Grant|Reversal)\s*\(|refundPayment\s*\(/;
 
 /**
  * Every handler that takes money or gives away paid access.
@@ -54,6 +55,11 @@ const MONEY_HANDLERS = [
   ["adminController.js", "grantPremiumModelToUser"],
   ["adminController.js", "grantWriterPlanToUser"],
   ["adminController.js", "grantFipPlanToUser"],
+  // Consultations were entirely outside the books until taxes came in.
+  ["consultationController.js", "createOrder"],
+  ["consultationController.js", "verifyPayment"],
+  ["consultationController.js", "rejectConsultation"],
+  ["consultationController.js", "cancelConsultation"],
 ];
 
 describe("every money-or-grant handler reaches the ledger", () => {
@@ -65,6 +71,28 @@ describe("every money-or-grant handler reaches the ledger", () => {
         LEDGER_CALL,
         `${name} moves money or grants paid access but records no ledger entry, so it is invisible in /finance`,
       );
+    });
+  }
+
+  // Recurring plans: three entry points (checkout verify, webhook, re-sync) and ONE place that books a
+  // charge. Audit both halves — the helper must record and invoice, and every entry point must go
+  // through it rather than growing a private copy that forgets to.
+  test("utils/planSubscription :: applySubscriptionCharge books and invoices every charge", () => {
+    const source = fs.readFileSync(path.join(here, "planSubscription.js"), "utf8");
+    const start = source.indexOf("export const applySubscriptionCharge = async");
+    assert.notEqual(start, -1, "applySubscriptionCharge was renamed — update this audit");
+    const body = source.slice(start, source.indexOf("\nexport const ", start + 1));
+    assert.match(body, /recordPayment\s*\(/, "a recurring plan charge is not recorded in the ledger");
+    assert.match(body, /issuePlanInvoice\s*\(/, "a recurring plan charge issues no invoice");
+  });
+
+  for (const [file, name] of [
+    ["paymentController.js", "verifyPlanSubscription"],
+    ["paymentController.js", "razorpayWebhook"],
+  ]) {
+    test(`${file} :: ${name} applies charges through the shared helper`, () => {
+      const body = handlerBody(readController(file), name);
+      assert.match(body, /applySubscriptionCharge\s*\(|handleRazorpayWebhookEvent\s*\(|dispatchRazorpayWebhook\s*\(/, `${name} must not book plan charges on its own`);
     });
   }
 

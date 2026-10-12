@@ -7,8 +7,9 @@ import { Pager, ToastProvider, useToast } from "../admin/ui";
 import useFinanceData from "./useFinanceData";
 import useFinanceActions from "./useFinanceActions";
 import LedgerSection from "./LedgerSection";
+import TaxesSection from "./TaxesSection";
 import {
-  PaymentsTable, ChallengesTable, InvoicesTable, PurchasesTable,
+  PaymentsTable, ChallengesTable, InvoicesTable, PurchasesTable, ConsultationsTable, PlansTable,
   PremiumTable, WriterPlansTable, BankReviewsTable,
 } from "./FinanceSections";
 
@@ -25,6 +26,12 @@ import {
  * The split is enforced server-side — reads are financeOnly, the control endpoints stay adminOnly
  * — so `canControl` below only decides what to RENDER. A finance user who forged the request would
  * still be refused.
+ *
+ * Taxes: every payment now carries 18% taxes. Overview, Transactions, Invoices, Script purchases and
+ * Challenges show them; Consultations and Plans are their own tabs; the Taxes tab holds the returns
+ * (GSTR-1, GSTR-3B), the document register, reconciliation and the gap back-fill. The admin-only tax
+ * controls — Refund (Overview), Issue back-fill invoices and the period lock (Taxes) — ride on the
+ * same `actions` prop as every other control.
  */
 
 const SECTIONS = [
@@ -36,7 +43,13 @@ const SECTIONS = [
   { key: "premium", label: "Premium subscribers", icon: "M11.48 3.5a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557L3.04 10.386a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" },
   { key: "writer-plans", label: "Writer plans", icon: "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" },
   { key: "bank-reviews", label: "Bank reviews", icon: "M3.75 4.5h16.5A1.5 1.5 0 0121.75 6v12a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5V6a1.5 1.5 0 011.5-1.5zM6 9h12M6 13.5h5.25" },
+  { key: "taxes", label: "Taxes", icon: "M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185zM9.75 9h.008v.008H9.75V9zm4.5 4.5h.008v.008h-.008V13.5z" },
+  { key: "consultations", label: "Consultations", icon: "M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" },
+  { key: "plans", label: "Plans", icon: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" },
 ];
+
+/** Sections that fetch their own data (several endpoints, a month picker) rather than one paged list. */
+const SELF_LOADING = new Set(["ledger", "taxes"]);
 
 /**
  * Grouped by key rather than by index slice.
@@ -47,9 +60,9 @@ const SECTIONS = [
  * insertion a local edit and a typo a visible one.
  */
 const GROUPS = [
-  { title: "", keys: ["ledger"] },
-  { title: "Records", keys: ["payments", "challenges", "invoices", "purchases"] },
-  { title: "Subscriptions", keys: ["premium", "writer-plans", "bank-reviews"] },
+  { title: "", keys: ["ledger", "taxes"] },
+  { title: "Records", keys: ["payments", "challenges", "invoices", "purchases", "consultations"] },
+  { title: "Subscriptions", keys: ["plans", "premium", "writer-plans", "bank-reviews"] },
 ];
 
 const NAV_GROUPS = GROUPS.map(({ title, keys }) => ({
@@ -60,9 +73,15 @@ const NAV_GROUPS = GROUPS.map(({ title, keys }) => ({
 function FinanceWorkspace({ canControl }) {
   const [section, setSection] = useState("ledger");
   const [search, setSearch] = useState("");
+  const [invoiceType, setInvoiceType] = useState("");
   const toast = useToast();
 
-  const data = useFinanceData(section === "ledger" ? null : section, search);
+  // Memoised: useFinanceData re-fetches when this object changes identity.
+  const filters = useMemo(
+    () => (section === "invoices" && invoiceType ? { documentType: invoiceType } : null),
+    [section, invoiceType],
+  );
+  const data = useFinanceData(SELF_LOADING.has(section) ? null : section, search, filters);
   const actions = useFinanceActions({
     refresh: data.refresh,
     onResult: (message, tone) => (tone === "error" ? toast.error(message) : toast.success(message)),
@@ -101,16 +120,25 @@ function FinanceWorkspace({ canControl }) {
     onRetry: data.refresh,
   };
 
+  // The one switch between the two audiences: null for the finance role, the controls for an admin.
+  const controls = canControl ? actions : null;
+
   const body = (() => {
     switch (section) {
-      case "ledger": return <LedgerSection />;
+      case "ledger": return <LedgerSection actions={controls} onOpenPdf={openInvoicePdf} />;
+      case "taxes": return <TaxesSection actions={controls} onOpenPdf={openInvoicePdf} />;
       case "payments": return <PaymentsTable {...shared} />;
-      case "challenges": return <ChallengesTable {...shared} />;
-      case "invoices": return <InvoicesTable {...shared} onOpenPdf={openInvoicePdf} />;
+      case "challenges": return <ChallengesTable {...shared} onOpenPdf={openInvoicePdf} />;
+      case "invoices": return (
+        <InvoicesTable {...shared} onOpenPdf={openInvoicePdf}
+          documentType={invoiceType} onDocumentTypeChange={setInvoiceType} />
+      );
       case "purchases": return <PurchasesTable {...shared} />;
-      case "premium": return <PremiumTable {...shared} actions={canControl ? actions : null} />;
-      case "writer-plans": return <WriterPlansTable {...shared} actions={canControl ? actions : null} />;
-      case "bank-reviews": return <BankReviewsTable {...shared} actions={canControl ? actions : null} />;
+      case "consultations": return <ConsultationsTable {...shared} />;
+      case "plans": return <PlansTable {...shared} />;
+      case "premium": return <PremiumTable {...shared} actions={controls} />;
+      case "writer-plans": return <WriterPlansTable {...shared} actions={controls} />;
+      case "bank-reviews": return <BankReviewsTable {...shared} actions={controls} />;
       default: return null;
     }
   })();
@@ -129,7 +157,7 @@ function FinanceWorkspace({ canControl }) {
       searchPlaceholder={`Search ${label.toLowerCase()}`}
     >
       {body}
-      {section === "ledger" ? null : (
+      {SELF_LOADING.has(section) ? null : (
         <Pager
           page={data.page}
           totalPages={data.totalPages}

@@ -46,6 +46,31 @@ const userSchema = new mongoose.Schema({
     country: { type: String },
     formatted: { type: String },
   },
+  // Billing details for tax invoices ("Billing details" in the UI). Separate from `address`, which is
+  // the public profile. Read by utils/tax/billing.js; written only through PUT /api/users/billing-profile
+  // (or the "save as my billing details" tick at checkout), which validates every field.
+  billingProfile: {
+    type: { type: String, enum: ["individual", "business"], default: "individual" },
+    name: { type: String, default: "" },
+    legalName: { type: String, default: "" },
+    // The buyer's business tax ID (GSTIN). Labelled "Business tax ID" in the UI — never "GST".
+    gstin: { type: String, default: "" },
+    isSez: { type: Boolean, default: false },
+    line1: { type: String, default: "" },
+    line2: { type: String, default: "" },
+    city: { type: String, default: "" },
+    stateCode: { type: String, default: "" },
+    pincode: { type: String, default: "" },
+    country: { type: String, default: "" },
+    updatedAt: { type: Date },
+  },
+  // Writers and professionals who are themselves tax-registered. Captured and shown to finance only;
+  // nothing is computed from it yet (TODO-CA: reverse charge / input credit on payouts).
+  payoutTaxProfile: {
+    pan: { type: String, default: "" },
+    gstin: { type: String, default: "" },
+    updatedAt: { type: Date },
+  },
   pendingEmail: { type: String },
   password: { type: String, required: function () { return !this.googleId; } },
   // Google OAuth linkage (writers / creators sign-in with Google).
@@ -345,6 +370,40 @@ const userSchema = new mongoose.Schema({
     // not a schema path and the schema is strict, so Mongoose discarded it silently on every writer
     // subscription ever sold — leaving no way to look a plan payment up in the Razorpay dashboard.
     paymentId: { type: String },
+    // How the CURRENT access was paid for. "one_time" is a single Razorpay order that grants a fixed
+    // window and then simply lapses — which is every plan sold before Razorpay Subscriptions were
+    // wired in. "recurring" means a Razorpay Subscription renews it; the state of that mandate lives
+    // in `recurring` below, and accessExpiresAt is moved forward by each successful charge.
+    billingMode: { type: String, enum: ["one_time", "recurring"], default: "one_time" },
+    // The Razorpay Subscription behind a recurring plan. Written only by utils/planSubscription.js
+    // (checkout verify, the webhook, and the lazy re-sync) — never from a request body.
+    recurring: {
+      razorpaySubscriptionId: { type: String, default: "" },
+      razorpayPlanId: { type: String, default: "" },
+      planKey: { type: String, default: "" },
+      tier: { type: String, default: "" },
+      cycle: { type: String, enum: ["", "monthly", "annual"], default: "" },
+      currency: { type: String, default: "" },
+      amountMinor: { type: Number, default: 0 },
+      // Razorpay's own lifecycle, mirrored: created → authenticated → active ⇄ pending → halted,
+      // and finally cancelled / completed / expired.
+      status: { type: String, default: "" },
+      autoRenew: { type: Boolean, default: false },
+      cancelAtPeriodEnd: { type: Boolean, default: false },
+      currentPeriodStart: { type: Date },
+      currentPeriodEnd: { type: Date },
+      nextChargeAt: { type: Date },
+      paidCount: { type: Number, default: 0 },
+      lastPaymentId: { type: String, default: "" },
+      lastChargedAt: { type: Date },
+      // When Razorpay created the tracked subscription. A charge on an OLDER mandate than this (one the
+      // user replaced by switching plans) is booked but must not change their access.
+      subscriptionCreatedAt: { type: Date },
+      // Ordering guard for webhooks, which Razorpay does not deliver in order: a status from an event
+      // older than this is ignored rather than allowed to roll the state backwards.
+      statusEventAt: { type: Date },
+      lastSyncedAt: { type: Date },
+    },
     sourcePath: { type: String },
     contactsLimit: { type: Number, default: 10 },
     messageWritersLimit: { type: Number, default: 10 },

@@ -2802,7 +2802,7 @@ export const termsData = [
       {
         "type": "bullets",
         "items": [
-          "Goods and Services Tax (GST);",
+          "indirect taxes on our services, charged at checkout and shown as \"Taxes\";",
           "Value Added Tax (VAT);",
           "sales tax;",
           "withholding tax;",
@@ -2813,6 +2813,14 @@ export const termsData = [
           "regulatory fees;",
           "or similar obligations,"
         ]
+      },
+      {
+        "type": "paragraph",
+        "text": "Listed prices on Ckript do not include taxes. Taxes of 18% are added to the full amount of every purchase at checkout — the price, any platform fee, or the whole consultation — for buyers in India and outside India, and the total including taxes is shown before you pay."
+      },
+      {
+        "type": "paragraph",
+        "text": "A tax invoice is issued for every payment and can be downloaded under Billing & invoices in your account settings. Business buyers can add a business tax ID to their billing details so that it appears on their invoices. A refund is documented with a credit note and includes the taxes paid on the refunded amount."
       },
       {
         "type": "paragraph",

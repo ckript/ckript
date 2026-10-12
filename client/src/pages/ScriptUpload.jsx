@@ -2723,18 +2723,18 @@ const ScriptUpload = ({
       amount: formatCurrency(effectivePrice),
     },
     {
-      item: "Platform Commission (" + Math.round(BUYER_COMMISSION_RATE * 100) + "%)",
-      detail: "Added to the script fee at buyer checkout",
+      item: "Platform fee (" + Math.round(BUYER_COMMISSION_RATE * 100) + "%)",
+      detail: "Paid by the buyer on top of the script price",
       amount: formatCurrency(buyerCommissionAmount),
     },
     {
-      item: "Buyer Checkout Total",
-      detail: "Script fee plus platform commission",
+      item: "Buyer pays (before taxes)",
+      detail: "Script price plus platform fee; taxes of 18% are added at the buyer's checkout",
       amount: formatCurrency(buyerTotalPayable),
     },
     {
       item: "Projected Writer Payout",
-      detail: "Writer receives the full script access fee",
+      detail: "You receive the full script price — the fee and taxes never reduce it",
       amount: formatCurrency(writerPayout),
     },
   ];

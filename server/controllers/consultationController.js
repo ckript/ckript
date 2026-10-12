@@ -3,9 +3,23 @@ import crypto from "crypto";
 import Consultation from "../models/Consultation.js";
 import User from "../models/User.js";
 import Availability from "../models/Availability.js";
-import { resolveCurrency } from "../utils/currencyFx.js";
+import { resolveCurrency, getUsdInrRate, isSupportedCurrency } from "../utils/currencyFx.js";
 import { createOrderWithUsdFallback } from "../utils/razorpayOrder.js";
-import { verifyRazorpaySignature } from "../utils/razorpaySignature.js";
+import { readVerifiedOrder } from "../utils/razorpayCapture.js";
+import { recordGrant, recordPayment } from "../utils/ledger.js";
+import { issueInvoice } from "../utils/invoiceIssue.js";
+import { refundPayment } from "../utils/tax/refunds.js";
+import {
+  billingFromRequest,
+  checkoutBreakdown,
+  lineFor,
+  pickPriced,
+  priceCheckout,
+  priceWithInrFallback,
+  requestIp,
+  resolveCapturedTax,
+  saveQuote,
+} from "../utils/tax/checkout.js";
 import { getAccessTokenFromRefresh, createMeetingEvent, deleteMeetingEvent, ReconnectRequired } from "../utils/googleCalendar.js";
 import { decryptToken } from "../utils/tokenCrypto.js";
 // Assume these email methods exist or we will add them later
@@ -78,13 +92,97 @@ const createConsultationMeeting = async ({ consultation, professional, start, en
   }
 };
 
+/**
+ * Consultation prices, PRE-TAX, in minor units. Durations are an enum: the old code charged the 30-minute
+ * price for ANY duration other than 60, so a request for 90 minutes paid ₹8,000.
+ */
+const CONSULTATION_TIERS = {
+  30: { INR: 800000, USD: 900 },
+  60: { INR: 1500000, USD: 1600 },
+};
+const PLATFORM_FEE_RATE = 0.10;
+// Bounds for a professional's own price (minor units), so a typo cannot create a ₹0.01 or ₹1 crore booking.
+const PRICE_BOUNDS = { INR: [10000, 50000000], USD: [100, 600000] };
+
+const validAvailabilityPrice = (availability) => {
+  const currency = String(availability?.currency || "INR").toUpperCase();
+  const amount = Math.round(Number(availability?.consultationPrice));
+  if (!isSupportedCurrency(currency) || !Number.isFinite(amount)) return null;
+  const [min, max] = PRICE_BOUNDS[currency];
+  return amount >= min && amount <= max ? { amount, currency } : null;
+};
+
+/**
+ * The PRE-TAX price of a consultation, in minor units: the professional's own (validated) price, or the
+ * platform tiers by duration. Shared by the quote and the order so the two can never disagree.
+ */
+const resolveConsultationPrice = async ({ professionalId, duration, requestedCurrency, writer }) => {
+  const selectedCurrency = resolveCurrency(requestedCurrency, writer?.preferredCurrency);
+  let durationMins = Number(duration) || 30;
+  const availability = await Availability.findOne({ professional: professionalId });
+  if (availability && availability.enabled) {
+    const price = validAvailabilityPrice(availability);
+    if (!price) return { status: 409, error: "This professional's consultation price is not set up correctly yet." };
+    if (!duration) durationMins = Number(availability.duration) || 30;
+    // The same INR fallback every other checkout has: a USD price converted at today's rate.
+    const inrAmount = price.currency === "INR" ? price.amount : Math.round(price.amount * (await getUsdInrRate()));
+    return { amount: price.amount, currency: price.currency, inrAmount, durationMins, availability };
+  }
+  if (duration) {
+    const tier = CONSULTATION_TIERS[durationMins];
+    if (!tier) return { status: 400, error: "Choose a 30- or 60-minute consultation." };
+    const currency = tier[selectedCurrency] ? selectedCurrency : "INR";
+    return { amount: tier[currency], currency, inrAmount: tier.INR, durationMins, availability: null };
+  }
+  return { status: 400, error: "Professional is not accepting consultations and no duration was provided." };
+};
+
+// POST /api/consultations/quote { professionalId, duration, currency } — for the checkout step:
+// the consultation price, Taxes (18%), and the total the writer will be charged. No order is created.
+export const getConsultationQuote = async (req, res) => {
+  try {
+    const { professionalId, duration } = req.body || {};
+    if (typeof professionalId !== "string" || !mongoose.Types.ObjectId.isValid(professionalId)) {
+      return res.status(400).json({ message: "Invalid professional ID." });
+    }
+    const [writer, professional] = await Promise.all([
+      User.findById(req.user._id).select("name email role preferredCurrency address billingProfile"),
+      User.findById(professionalId).select("name"),
+    ]);
+    if (!writer) return res.status(404).json({ message: "User not found" });
+    if (!professional) return res.status(404).json({ message: "Professional not found." });
+    const price = await resolveConsultationPrice({ professionalId, duration, requestedCurrency: req.body.currency, writer });
+    if (price.error) return res.status(price.status).json({ message: price.error });
+    const lines = [lineFor("consultation", price.amount, `Consultation with ${professional.name} (${price.durationMins} min)`)];
+    const priced = await priceCheckout({ user: writer, lines, currency: price.currency, ip: requestIp(req) });
+    return res.json({
+      currency: price.currency,
+      duration: price.durationMins,
+      listedMinor: price.amount,
+      paymentRequired: consultationPaymentsEnabled(),
+      breakdown: checkoutBreakdown(priced, { currency: price.currency, lines }),
+    });
+  } catch (error) {
+    console.error("Consultation quote error:", error);
+    return res.status(500).json({ message: "Could not price this consultation." });
+  }
+};
+
+/** What the platform owes the professional for a booking, in INR minor units (payouts are INR). */
+const professionalPayoutInrMinor = async (consultation) => {
+  const share = Number(consultation.professionalAmount || 0);
+  if (String(consultation.currency).toUpperCase() === "INR") return share;
+  const rate = Number(consultation.tax?.inr?.fxRate) || await getUsdInrRate();
+  return Math.round(share * rate);
+};
+
 // Razorpay checkout for consultations is OFF unless CONSULTATION_PAYMENTS_ENABLED=true. While off,
 // a booking is confirmed immediately (no charge) so the flow can be tested end to end.
 const consultationPaymentsEnabled = () => String(process.env.CONSULTATION_PAYMENTS_ENABLED || "").toLowerCase() === "true";
 
 // Booking-confirmed emails to the professional and the writer. Never throws: the booking is already
 // saved by the time these go out, so an email failure must not fail the request.
-const sendBookingConfirmedEmails = async (consultation, writer, professional) => {
+const sendBookingConfirmedEmails = async (consultation, writer, professional, { charged = true } = {}) => {
   try {
     if (professional) {
       await sendConsultationBookedEmail(professional.email, {
@@ -93,7 +191,11 @@ const sendBookingConfirmedEmails = async (consultation, writer, professional) =>
         topic: consultation.topic,
         date: consultation.scheduledStart.toLocaleDateString(),
         time: consultation.scheduledStart.toLocaleTimeString(),
-        amount: consultation.amount / 100, // format from paise
+        // The professional's figures: the price, the 10% platform fee, and their payout. Never the
+        // writer's taxes — those are the platform's, and never reduce the professional's share.
+        amount: (consultation.preTaxAmount || consultation.amount) / 100,
+        platformFee: consultation.platformFee / 100,
+        payout: consultation.professionalAmount / 100,
         currency: consultation.currency,
         additionalMessage: consultation.additionalMessage,
         fileLink: consultation.fileLink,
@@ -103,7 +205,9 @@ const sendBookingConfirmedEmails = async (consultation, writer, professional) =>
     await sendConsultationPaidWriterEmail(writer.email, {
       writerName: writer.name,
       producerName: professional ? professional.name : "Producer",
+      charged,
       amount: consultation.amount / 100,
+      taxes: (consultation.taxMinor || 0) / 100,
       currency: consultation.currency,
       additionalMessage: consultation.additionalMessage,
       fileLink: consultation.fileLink,
@@ -138,28 +242,10 @@ export const createOrder = async (req, res) => {
       return res.status(503).json({ message: "Razorpay is not configured. Keys are missing." });
     }
 
-    let amount = 0;
-    let inrAmount = null;
-    let selectedCurrency = resolveCurrency(req.body.currency, writer.preferredCurrency);
-    let currency = selectedCurrency;
-    let durationMins = duration ? Number(duration) : 30;
-
-    const availability = await Availability.findOne({ professional: professionalId });
-    if (availability && availability.enabled) {
-      amount = availability.consultationPrice;
-      currency = availability.currency || "INR";
-      if (!duration) durationMins = availability.duration;
-    } else if (duration) {
-      // Dynamic pricing based on duration and selected currency
-      inrAmount = durationMins === 60 ? 1500000 : 800000; // 15000 or 8000 INR in paise
-      if (selectedCurrency === "USD") {
-        amount = durationMins === 60 ? 1600 : 900; // $16 or $9 in cents
-      } else {
-        amount = inrAmount;
-      }
-    } else {
-      return res.status(400).json({ message: "Professional is not accepting consultations and no duration was provided." });
-    }
+    // PRE-TAX price, in minor units, from the professional's own (validated) price or the platform tiers.
+    const priceResult = await resolveConsultationPrice({ professionalId, duration, requestedCurrency: req.body.currency, writer });
+    if (priceResult.error) return res.status(priceResult.status).json({ message: priceResult.error });
+    const { amount, inrAmount, currency, durationMins, availability } = priceResult;
 
     const [hours, minutes] = (time || "00:00").split(':');
     const scheduledStart = new Date(date || Date.now());
@@ -167,12 +253,13 @@ export const createOrder = async (req, res) => {
     const scheduledEnd = new Date(scheduledStart.getTime() + durationMins * 60000);
 
     if (!paymentsEnabled) {
-      const platformFee = Math.round(amount * 0.10);
+      const platformFee = Math.round(amount * PLATFORM_FEE_RATE);
       const consultation = new Consultation({
         writer: writerId,
         professional: professionalId,
         professionalRole: professional.role,
         amount,
+        preTaxAmount: amount,
         currency,
         platformFee,
         professionalAmount: amount - platformFee,
@@ -187,7 +274,19 @@ export const createOrder = async (req, res) => {
         paidAt: new Date(),
       });
       await consultation.save();
-      await sendBookingConfirmedEmails(consultation, writer, professional);
+      // Nothing was charged: a grant at list price, so it is visible without being counted as revenue.
+      await recordGrant({
+        kind: "consultation",
+        user: writerId,
+        listPriceMinor: amount,
+        currency,
+        subjectType: "Consultation",
+        subjectId: consultation._id,
+        label: `Consultation with ${professional.name}`,
+        reason: "consultation payments switched off",
+        source: "consultationController.createOrder",
+      });
+      await sendBookingConfirmedEmails(consultation, writer, professional, { charged: false });
 
       return res.status(200).json({
         message: "Consultation booked successfully",
@@ -196,10 +295,25 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
-      amount,
+    const billing = await billingFromRequest(req, writer);
+    if (billing.error) return res.status(400).json({ message: billing.error, errors: billing.errors });
+    const consultLabel = `Consultation with ${professional.name} (${durationMins} min)`;
+    const consultLines = [lineFor("consultation", amount, consultLabel)];
+    const inrConsultLines = [lineFor("consultation", inrAmount || amount, consultLabel)];
+    // Taxes (18%) on the FULL consultation price, added on top (by decision).
+    const priced = await priceWithInrFallback({
+      user: writer,
       currency,
-      inrAmount,
+      lines: consultLines,
+      inrLines: inrConsultLines,
+      billingOverride: billing.override,
+      ip: requestIp(req),
+    });
+
+    const { order, fellBackToINR } = await createOrderWithUsdFallback(razorpay, {
+      amount: priced.requested.grossMinor,
+      currency,
+      inrAmount: currency === "INR" ? null : priced.inr.grossMinor,
       receipt: `cons_${writerId.toString().substring(18)}_${Date.now()}`,
       notes: {
         type: "consultation",
@@ -209,15 +323,20 @@ export const createOrder = async (req, res) => {
     });
     if (!order) return res.status(500).json({ message: "Failed to create Razorpay order" });
 
-    // Fees are derived from what Razorpay will actually charge (a USD order may fall back to INR).
-    const platformFee = Math.round(order.amount * 0.10);
-    const professionalAmount = order.amount - platformFee;
+    // The platform fee and the professional's share come from the PRE-TAX price in the currency actually
+    // charged (a USD order may fall back to INR). Taxes are the platform's, never the professional's.
+    const chosen = pickPriced(priced, order.currency);
+    const preTaxAmount = chosen.preTaxMinor;
+    const platformFee = Math.round(preTaxAmount * PLATFORM_FEE_RATE);
+    const professionalAmount = preTaxAmount - platformFee;
 
     const consultation = new Consultation({
       writer: writerId,
       professional: professionalId,
       professionalRole: professional.role,
       amount: order.amount,
+      preTaxAmount,
+      taxMinor: chosen.tax?.totals?.taxMinor || 0,
       currency: order.currency,
       platformFee,
       professionalAmount,
@@ -233,6 +352,7 @@ export const createOrder = async (req, res) => {
     });
 
     await consultation.save();
+    await saveQuote({ order, user: writer, purpose: "consultation", subjectId: String(consultation._id), priced: chosen });
 
     return res.status(200).json({
       orderId: order.id,
@@ -242,6 +362,10 @@ export const createOrder = async (req, res) => {
       paymentRequired: true,
       fellBackToINR,
       consultationId: consultation._id,
+      breakdown: checkoutBreakdown(chosen, {
+        currency: order.currency,
+        lines: String(order.currency).toUpperCase() === "INR" ? inrConsultLines : consultLines,
+      }),
     });
   } catch (error) {
     console.error("Create Consultation Order Error:", error);
@@ -273,21 +397,90 @@ export const verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Payment verification failed: Order mismatch" });
     }
 
-    if (!verifyRazorpaySignature({
+    const razorpay = await getRazorpayInstance();
+    if (!razorpay) return res.status(503).json({ message: "Razorpay is not configured. Keys are missing." });
+    // The order is ours, for this writer, and captured in full — a signature alone proved none of that.
+    const verified = await readVerifiedOrder(razorpay, {
       orderId: consultation.razorpayOrderId,
       paymentId: razorpay_payment_id,
       signature: razorpay_signature,
-    })) {
-      consultation.status = "payment_failed";
-      await consultation.save();
-      return res.status(400).json({ message: "Payment verification failed: Invalid signature" });
+      expectNotes: { type: "consultation", writerId: String(consultation.writer._id) },
+      expectedAmountMinor: consultation.amount,
+    });
+    if (!verified.ok) {
+      if (!verified.pending && verified.status === 400) {
+        consultation.status = "payment_failed";
+        await consultation.save();
+      }
+      return res.status(verified.status || 400).json({ message: verified.message, paymentPending: Boolean(verified.pending) });
     }
+
+    const charge = verified.charge;
+    const tax = await resolveCapturedTax({
+      orderId: consultation.razorpayOrderId,
+      paymentId: razorpay_payment_id,
+      paidMinor: charge.amountMinor,
+      currency: charge.currency,
+      paidAt: charge.paidAt,
+      user: consultation.writer,
+      lines: [lineFor("consultation", consultation.preTaxAmount || consultation.amount, "Consultation")],
+    });
 
     consultation.status = "awaiting_response";
     consultation.razorpayPaymentId = String(razorpay_payment_id);
-    consultation.paidAt = new Date();
+    consultation.paidAt = charge.paidAt || new Date();
+    if (tax) {
+      consultation.tax = tax;
+      consultation.taxMinor = tax.totals.taxMinor;
+    }
     // The Google Meet link is created when the professional accepts (acceptConsultation), not here.
     await consultation.save();
+
+    // Consultations were entirely outside the books: no ledger entry, no invoice. Both now, non-fatal.
+    await recordPayment({
+      kind: "consultation",
+      user: consultation.writer._id,
+      amountMinor: charge.amountMinor,
+      currency: charge.currency,
+      listPriceMinor: consultation.preTaxAmount || consultation.amount,
+      providerOrderId: consultation.razorpayOrderId,
+      providerPaymentId: String(razorpay_payment_id),
+      subjectType: "Consultation",
+      subjectId: consultation._id,
+      label: `Consultation ${consultation.bookingId || ""}`.trim(),
+      source: "consultationController.verifyPayment",
+      tax,
+      creatorPayoutMinor: await professionalPayoutInrMinor(consultation),
+      gatewayFeeMinor: charge.fee,
+      gatewayTaxMinor: charge.feeTax,
+      metadata: { professionalId: String(consultation.professional), platformFeeMinor: consultation.platformFee },
+    });
+    const invoice = await issueInvoice({
+      kind: "consultation",
+      user: consultation.writer,
+      paymentReference: `RZP-CNS-${razorpay_payment_id}`,
+      providerPaymentId: String(razorpay_payment_id),
+      tax,
+      supplyDate: consultation.paidAt,
+      currency: charge.currency,
+      amountCharged: charge.chargedTotal,
+      consultation: consultation._id,
+      detailLines: [
+        consultation.topic || "Consultation",
+        `Booking ${consultation.bookingId || "-"}`,
+        `${consultation.duration} minutes`,
+        `Payment Ref: ${razorpay_payment_id}`,
+      ],
+      rows: tax ? [] : [
+        { item: "Consultation", type: "Service", detail: `${consultation.duration} minutes`, amountLabel: `${charge.currency} ${charge.chargedTotal.toFixed(2)}`, amountValue: charge.chargedTotal },
+        { item: "Total Paid", type: "Total", detail: "Total charged via payment gateway.", amountLabel: `${charge.currency} ${charge.chargedTotal.toFixed(2)}`, amountValue: charge.chargedTotal },
+      ],
+      source: "consultationController.verifyPayment",
+    });
+    if (invoice?._id && String(consultation.invoice || "") !== String(invoice._id)) {
+      consultation.invoice = invoice._id;
+      await consultation.save();
+    }
 
     const professional = await User.findById(consultation.professional);
     await sendBookingConfirmedEmails(consultation, consultation.writer, professional);
@@ -420,26 +613,28 @@ export const rejectConsultation = async (req, res) => {
     consultation.rejectionReason = reason;
     consultation.rejectedAt = new Date();
     
-    // Process Refund via Razorpay
+    // Refund through the shared path: Razorpay refund + credit note + ledger reversal, taxes included.
     if (consultation.razorpayPaymentId) {
       const razorpay = await getRazorpayInstance();
       if (razorpay) {
-        try {
-          const refund = await razorpay.payments.refund(consultation.razorpayPaymentId, {
-            amount: consultation.amount,
-            notes: {
-              consultationId: consultation._id.toString(),
-              reason: "Professional rejected consultation"
-            }
-          });
-          consultation.razorpayRefundId = refund.id;
-          consultation.refundAmount = consultation.amount;
+        const refunded = await refundPayment({
+          razorpay,
+          paymentId: consultation.razorpayPaymentId,
+          amountMinor: consultation.amount,
+          reason: "Professional rejected the consultation",
+          notes: { consultationId: consultation._id.toString() },
+          source: "consultationController.rejectConsultation",
+        });
+        if (refunded.ok) {
+          consultation.razorpayRefundId = refunded.refund.id;
+          consultation.refundAmount = refunded.amountMinor;
+          consultation.creditNote = refunded.creditNote?._id || undefined;
           consultation.status = "refunded";
           consultation.refundCompletedAt = new Date();
-        } catch (refundError) {
-          console.error("Refund failed:", refundError);
+        } else {
+          console.error("Refund failed:", refunded.message);
           consultation.status = "refund_failed";
-          consultation.refundReason = refundError.message || "Razorpay API error";
+          consultation.refundReason = refunded.message || "Razorpay API error";
         }
       }
     }
@@ -502,24 +697,27 @@ export const cancelConsultation = async (req, res) => {
     if (consultation.status === "awaiting_response") {
       consultation.status = "cancelled";
       
-      // Process Refund via Razorpay
+      // Refund through the shared path: Razorpay refund + credit note + ledger reversal, taxes included.
       if (consultation.razorpayPaymentId) {
         const razorpay = await getRazorpayInstance();
         if (razorpay) {
-          try {
-            const refund = await razorpay.payments.refund(consultation.razorpayPaymentId, {
-              amount: consultation.amount,
-              notes: {
-                consultationId: consultation._id.toString(),
-                reason: "Writer cancelled consultation"
-              }
-            });
-            consultation.razorpayRefundId = refund.id;
-            consultation.refundAmount = consultation.amount;
+          const refunded = await refundPayment({
+            razorpay,
+            paymentId: consultation.razorpayPaymentId,
+            amountMinor: consultation.amount,
+            reason: "Writer cancelled the consultation",
+            notes: { consultationId: consultation._id.toString() },
+            source: "consultationController.cancelConsultation",
+          });
+          if (refunded.ok) {
+            consultation.razorpayRefundId = refunded.refund.id;
+            consultation.refundAmount = refunded.amountMinor;
+            consultation.creditNote = refunded.creditNote?._id || undefined;
             consultation.status = "refunded";
             consultation.refundCompletedAt = new Date();
-          } catch (refundError) {
+          } else {
             consultation.status = "refund_failed";
+            consultation.refundReason = refunded.message || "Razorpay API error";
           }
         }
       }

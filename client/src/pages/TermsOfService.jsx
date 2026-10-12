@@ -216,6 +216,9 @@ export default function TermsOfService() {
             <Link to="/privacy-policy" className="hover:text-red-900 transition-colors">
               Privacy Policy
             </Link>
+            <Link to="/refund-policy" className="hover:text-red-900 transition-colors">
+              Refund Policy
+            </Link>
             <Link to="/" className="hover:text-red-900 transition-colors">
               Home
             </Link>

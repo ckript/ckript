@@ -23,6 +23,7 @@ import userRoutes from "./routes/userRoutes.js";
 import postRoutes from "./routes/postRoutes.js";
 import scriptRoutes from "./routes/scriptRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import { razorpayWebhook } from "./controllers/paymentController.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import searchRoutes from "./routes/search.js";
@@ -43,6 +44,7 @@ import financeRoutes from "./routes/financeRoutes.js";
 import judgeRoutes from "./routes/judgeRoutes.js";
 import unsubscribeRoutes from "./routes/unsubscribeRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
+import { getTaxConfig } from "./controllers/billingController.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import legalRoutes from "./routes/legalRoutes.js";
 import agreementRoutes from "./routes/agreementRoutes.js";
@@ -333,6 +335,12 @@ app.use(cors({
 
 app.use(compression());
 
+// Razorpay webhooks (plan renewals, cancellations, failed retries). Mounted BEFORE the JSON parser on
+// purpose: the signature is an HMAC of the exact bytes Razorpay sent, and express.json() would hand
+// the handler a re-parsed object whose serialisation no longer matches. Server-to-server, so it sits
+// outside the per-user API rate limiter too — Razorpay retries in bursts after an outage.
+app.post("/api/webhooks/razorpay", express.raw({ type: "*/*", limit: "1mb" }), razorpayWebhook);
+
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -383,6 +391,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api", analyticsRoutes);
 app.use("/api/script-pitches", scriptPitchRoutes);
 app.use("/api/invoices", invoiceRoutes);
+// Public: the tax label ("Taxes"), rate and state list a checkout needs. No GSTIN, no GST wording.
+app.get("/api/tax/config", getTaxConfig);
 app.use("/api/finance", financeRoutes);
 app.use("/api/judge", judgeRoutes);
 // PUBLIC and unauthenticated, deliberately. Someone clicking unsubscribe is in their inbox with no

@@ -26,12 +26,18 @@
 import api from "../../services/api";
 import { formatCurrency, formatSubunits } from "../../utils/currency";
 import { fail, ok } from "./projectActions";
+import { fetchTaxConfig } from "../../utils/taxes";
+
+/** Re-exported so the checkout hook needs one import for everything purchase-related. */
+export const fetchTaxConfigForCheckout = fetchTaxConfig;
 
 const text = (value) => String(value ?? "").trim();
 
 /**
- * The buyer-side commission, mirroring `SCRIPT_PURCHASE_PLATFORM_TAX_RATE` in
- * `server/controllers/scriptController.js`.
+ * The buyer-side platform fee, mirroring `SCRIPT_PURCHASE_PLATFORM_FEE_RATE` in
+ * `server/controllers/scriptController.js`. A FEE, not a tax: taxes (18%) are added on the price plus
+ * this fee, and the server's quote (`fetchPurchaseQuote`) is what states them — this client never
+ * computes tax.
  *
  * A client copy of a server number is a drift risk, and this one is displayed BEFORE the server is
  * asked anything — the buyer has to see what they will owe before they press a button that opens a
@@ -40,20 +46,20 @@ const text = (value) => String(value ?? "").trim();
  * so the estimate is only ever what we PROMISE — the moment there is an authoritative number, the
  * authoritative number is what the screen shows.
  */
-export const PLATFORM_TAX_RATE = 0.05;
+export const PLATFORM_FEE_RATE = 0.05;
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 /** The same arithmetic as `getScriptPurchasePricing`, in the same order, so the rounding matches. */
 export const getPurchasePricing = (baseAmount) => {
   const base = round2(Math.max(0, Number(baseAmount) || 0));
-  const platformTaxAmount = round2(base * PLATFORM_TAX_RATE);
+  const platformFeeAmount = round2(base * PLATFORM_FEE_RATE);
   return {
     baseAmount: base,
-    platformTaxRate: PLATFORM_TAX_RATE,
-    platformTaxPercent: Math.round(PLATFORM_TAX_RATE * 100),
-    platformTaxAmount,
-    totalAmount: round2(base + platformTaxAmount),
+    platformFeeRate: PLATFORM_FEE_RATE,
+    platformFeePercent: Math.round(PLATFORM_FEE_RATE * 100),
+    platformFeeAmount,
+    totalAmount: round2(base + platformFeeAmount),
   };
 };
 
@@ -68,9 +74,9 @@ export const readOrderPricing = (orderData = {}, fallbackBase = 0) => {
   if (pricing && Number.isFinite(Number(pricing.totalAmount))) {
     return {
       baseAmount: round2(pricing.baseAmount),
-      platformTaxRate: Number(pricing.platformTaxRate ?? PLATFORM_TAX_RATE),
-      platformTaxPercent: Number(pricing.platformTaxPercent ?? Math.round(PLATFORM_TAX_RATE * 100)),
-      platformTaxAmount: round2(pricing.platformTaxAmount),
+      platformFeeRate: Number(pricing.platformFeeRate ?? PLATFORM_FEE_RATE),
+      platformFeePercent: Number(pricing.platformFeePercent ?? Math.round(PLATFORM_FEE_RATE * 100)),
+      platformFeeAmount: round2(pricing.platformFeeAmount),
       totalAmount: round2(pricing.totalAmount),
     };
   }
@@ -363,7 +369,24 @@ export const loadRazorpaySdk = () => new Promise((resolve) => {
  * request and generates the acceptance PDF from it. That is why a dismissed payment sheet is not a
  * lost agreement, and why re-creating an order is safe: it re-records the same acceptance.
  */
-export async function createPurchaseOrder({ scriptId, acceptances = {}, script = {}, currency = "" } = {}) {
+/**
+ * What this purchase costs, from the server: the script price, the platform fee and — when taxes are
+ * being charged — "Taxes (18%)" on their sum, with the total the gateway will take. Display only.
+ */
+export async function fetchPurchaseQuote({ scriptId, currency = "" } = {}) {
+  if (!text(scriptId)) return null;
+  try {
+    const { data } = await api.post("/scripts/purchase/quote", {
+      scriptId,
+      ...(text(currency) ? { currency: text(currency).toUpperCase() } : {}),
+    });
+    return data?.breakdown || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function createPurchaseOrder({ scriptId, acceptances = {}, script = {}, currency = "", billing = null, saveBilling = false } = {}) {
   if (!text(scriptId)) return { ok: false, status: 0, message: "This project cannot be paid for.", flags: {} };
   const invalid = assertAcceptances({ acceptances, script });
   if (invalid) return { ok: false, status: 0, message: invalid, flags: {} };
@@ -378,6 +401,8 @@ export async function createPurchaseOrder({ scriptId, acceptances = {}, script =
       acceptedLegalDisclaimer: true,
       // DEF-31: state the currency instead of letting the account decide one silently.
       ...(text(currency) ? { currency: text(currency).toUpperCase() } : {}),
+      // Who the tax invoice is addressed to (only sent when taxes are being charged).
+      ...(billing ? { billing, saveBilling: Boolean(saveBilling) } : {}),
     });
     return ok(data);
   } catch (cause) {

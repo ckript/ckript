@@ -40,6 +40,8 @@ import MobileShell from "../../../shell/MobileShell";
 import { MOBILE_SHELL_MODE } from "../../../shell/mobileShellModes";
 import { buildAccountSettingsView } from "./accountSettingsModel";
 import { MembershipCredentialSettings, PayoutCredentialSettings } from "./AccountCredentialsMobile";
+import PlanBillingSettingsMobile from "./PlanBillingSettingsMobile";
+import BillingInvoicesCard from "../../../../components/BillingInvoicesCard";
 import "./AccountSettingsMobile.css";
 
 const EMPTY_EMAIL = { newEmail: "", password: "" };
@@ -263,6 +265,10 @@ export default function AccountSettingsMobile({ user }) {
         <Switch label="Private account" description="Only approved followers can see your profile" checked={Boolean(profile.isPrivate)} disabled={Boolean(busy)} onChange={(isPrivate) => updateSetting("privacy", { isPrivate }, "Privacy updated")} />
         {view.writer ? <Switch label="Allow industry contact" description="Verified professionals may request your contact details" checked={profile.allowIndustryContact !== false} disabled={Boolean(busy)} onChange={(allowIndustryContact) => updateSetting("contact", { allowIndustryContact }, "Contact preference updated")} /> : null}
       </Section>
+
+      <Section title="Plan & billing" description="Paid plans renew automatically until you turn renewal off. Access you've paid for is never cut short."><PlanBillingSettingsMobile onSuccess={(message) => toast.success(message)} /></Section>
+
+      <Section title="Billing & invoices" description="The details your tax invoices carry, and every invoice and credit note you have been issued."><BillingInvoicesCard /></Section>
 
       {view.writer ? <Section title="Payout account" description="Masked account details used for withdrawals. Every change is reviewed before it becomes active."><PayoutCredentialSettings onSuccess={(message) => toast.success(message)} /></Section> : null}
 

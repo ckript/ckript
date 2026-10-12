@@ -23,10 +23,17 @@ const base = () => ({
 
 describe("script hold payment boundary", () => {
   test("accepts the exact paid and captured account/project order", () => {
-    assert.deepEqual(validateScriptHoldPayment(base()), {
-      ok: true,
-      charge: { currency: "INR", chargedTotal: 210, fxRate: 1 },
-    });
+    const result = validateScriptHoldPayment(base());
+    assert.equal(result.ok, true);
+    const { paidAt, ...charge } = result.charge;
+    assert.ok(paidAt instanceof Date);
+    assert.deepEqual(charge, { currency: "INR", amountMinor: 21000, chargedTotal: 210, fxRate: 1 });
+  });
+
+  test("an order that fell back from USD to INR is recorded at an FX rate of 1, not the USD rate", () => {
+    const input = base();
+    input.order.notes.fxRate = "88.4";
+    assert.equal(validateScriptHoldPayment(input).charge.fxRate, 1);
   });
 
   for (const [name, patch] of [

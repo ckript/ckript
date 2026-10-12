@@ -6,6 +6,17 @@ import {
   listFinanceEntries,
   exportFinanceCsv,
 } from "../controllers/financeController.js";
+import {
+  getTaxSummary,
+  getGstr1,
+  getGstr3b,
+  getTaxRegister,
+  getTaxReviewQueue,
+  getReconciliation,
+  getGapReport,
+  listFinanceConsultations,
+  listFinancePlans,
+} from "../controllers/financeTaxController.js";
 // The payment surfaces moved out of the admin console live here now. These REUSE the admin
 // controllers rather than reimplementing them — one query per dataset, so the finance page and any
 // remaining admin view can never disagree about what a payment was.
@@ -37,5 +48,18 @@ router.get("/invoices", getInvoices);
 router.get("/users", getUsers);
 router.get("/purchases", getInvestorPurchases);
 router.get("/bank-reviews", getBankDetailReviews);
+router.get("/consultations", listFinanceConsultations);
+router.get("/plans", listFinancePlans);
+
+// ── Taxes, READ-ONLY ─────────────────────────────────────────────────────────
+// The statutory views the CA files from. Issuing back-fill invoices, locking a period and refunding
+// are changes, so they live on adminRoutes behind adminOnly.
+router.get("/taxes/summary", getTaxSummary);
+router.get("/taxes/gstr1", getGstr1);
+router.get("/taxes/gstr3b", getGstr3b);
+router.get("/taxes/register", getTaxRegister);
+router.get("/taxes/review", getTaxReviewQueue);
+router.get("/taxes/reconciliation", getReconciliation);
+router.get("/taxes/gap", getGapReport);
 
 export default router;

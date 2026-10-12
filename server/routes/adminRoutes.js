@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import protect from "../middleware/authMiddleware.js";
 import adminOnly from "../middleware/adminMiddleware.js";
+import { issueGapInvoicesAdmin, lockTaxPeriod, refundLedgerPayment } from "../controllers/financeTaxController.js";
 import {
   listExternalRegistrations,
   approveExternalRegistration,
@@ -108,6 +109,11 @@ const router = express.Router();
 
 // All routes require auth + admin
 router.use(protect, adminOnly);
+
+// Taxes and refunds: the CHANGES behind the finance portal's read-only views (financeRoutes).
+router.post("/taxes/gap/issue", issueGapInvoicesAdmin);
+router.post("/taxes/period-lock", lockTaxPeriod);
+router.post("/payments/:ledgerEntryId/refund", refundLedgerPayment);
 
 // Dashboard
 router.get("/stats", getStats);

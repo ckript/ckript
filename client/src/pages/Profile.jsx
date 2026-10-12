@@ -2,6 +2,9 @@ import { useDeferredValue, useEffect, useState, useContext, useRef, useCallback 
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion as Motion } from "framer-motion";
 import api from "../services/api";
+import CheckoutModal from "../components/checkout/CheckoutModal";
+import { useTaxConfig } from "../utils/taxes";
+import { formatSubunits } from "../utils/currency";
 import { razorpayKeyFromOrder } from "../utils/razorpayKey";
 import { loadRazorpaySdk } from "../utils/loadRazorpaySdk";
 import { AuthContext } from "../context/AuthContext";
@@ -9,10 +12,10 @@ import { useAuthModal } from "../context/AuthModalContext";
 import { useDarkMode } from "../context/DarkModeContext";
 import ProjectCard from "../components/ProjectCard";
 import EditProfileModal from "../components/EditProfileModal";
-import BankDetails from "../components/BankDetails";
-import Transactions from "../components/Transactions";
 import GoogleCalendarCard from "../components/GoogleCalendarCard";
 import CurrencyToggle from "../components/CurrencyToggle";
+import PlanBillingCard from "../components/PlanBillingCard";
+import BillingInvoicesCard from "../components/BillingInvoicesCard";
 import CompetitionAchievements from "../components/competition/CompetitionAchievements";
 import SocialShareButton from "../components/SocialShareButton";
 import ProfileCompletionBanner from "../components/ProfileCompletionBanner";
@@ -295,6 +298,23 @@ const Profile = () => {
   const [showPitchModal, setShowPitchModal] = useState(false);
   const [myScripts, setMyScripts] = useState([]);
   const [pitchData, setPitchData] = useState({ scriptId: "", note: "", duration: "", date: "", time: "" });
+  // Consultation checkout: the listed price comes from the server (the professional's own price, or the
+  // platform's tiers), and with taxes on, the booking goes through the checkout step before paying.
+  const taxConfig = useTaxConfig();
+  const [consultQuote, setConsultQuote] = useState(null);
+  const [consultCheckoutOpen, setConsultCheckoutOpen] = useState(false);
+  useEffect(() => {
+    if (!showPitchModal || !pitchData.duration || !profile?._id) return undefined;
+    let alive = true;
+    api.post("/consultations/quote", {
+      professionalId: profile._id,
+      duration: pitchData.duration,
+      currency: pitchData.currency || "INR",
+    })
+      .then(({ data }) => { if (alive) setConsultQuote(data || null); })
+      .catch(() => { if (alive) setConsultQuote(null); });
+    return () => { alive = false; };
+  }, [showPitchModal, pitchData.duration, pitchData.currency, profile?._id]);
   const [sendingPitch, setSendingPitch] = useState(false);
   const [pitchSuccess, setPitchSuccess] = useState(false);
 
@@ -574,7 +594,7 @@ const Profile = () => {
   };
 
   
-  const handleDirectBooking = async () => {
+  const handleDirectBooking = async ({ billing = null, saveBilling = false } = {}) => {
     try {
       setSendingPitch(true);
       const showBookedAndReset = () => {
@@ -594,8 +614,10 @@ const Profile = () => {
         currency: pitchData.currency || "INR",
         topic: pitchData.topic || "Book Consultation",
         fileLink: pitchData.fileLink || undefined,
-        additionalMessage: pitchData.note
+        additionalMessage: pitchData.note,
+        ...(billing ? { billing, saveBilling } : {}),
       });
+      setConsultCheckoutOpen(false);
 
       // Payments are switched off on the server (CONSULTATION_PAYMENTS_ENABLED) - booking is already confirmed.
       if (!order.paymentRequired) {
@@ -660,6 +682,11 @@ const Profile = () => {
     
     if (pitchData.duration) {
       if (!pitchData.date || !pitchData.time) return alert("Please select a preferred date and time.");
+      // With taxes on (and payments taken), show the checkout step — Taxes (18%) and the total — first.
+      if (taxConfig?.chargingEnabled && consultQuote?.paymentRequired) {
+        setConsultCheckoutOpen(true);
+        return undefined;
+      }
       return handleDirectBooking();
     }
     try {
@@ -2666,6 +2693,8 @@ const Profile = () => {
           <div className="profile-workspace-settings__section profile-workspace-settings__section--account py-6 first:pt-0 last:pb-0">
             <SectionCard dark={dark} noBox title="Account" icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}>
             <div className="space-y-4">
+              <PlanBillingCard dark={dark} />
+              <BillingInvoicesCard dark={dark} />
               <div className={`profile-workspace-settings__preference flex items-center justify-between py-3 px-4 rounded-xl border ${dark ? "border-white/[0.06] bg-white/[0.02]" : "border-gray-100 bg-gray-50/60"}`}>
                 <div>
                   <p className={`text-[13px] font-semibold ${dark ? "text-white/70" : "text-gray-700"}`}>Display currency</p>
@@ -3402,7 +3431,7 @@ const Profile = () => {
                             : "bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:border-[#8a3324]"
                         }`}
                       >
-                        <option value="INR">INR (?)</option>
+                        <option value="INR">INR (₹)</option>
                         <option value="USD">USD ($)</option>
                       </select>
                     </div>
@@ -3420,9 +3449,15 @@ const Profile = () => {
                         }`}
                       >
                         <option value="">-- Select Duration --</option>
-                        <option value="30">30 Min - {(!pitchData.currency || pitchData.currency === "INR") ? "?8000" : "$9"}</option>
-                        <option value="60">1 Hour - {(!pitchData.currency || pitchData.currency === "INR") ? "?15000" : "$16"}</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 hour</option>
                       </select>
+                      {pitchData.duration && consultQuote ? (
+                        <p className={`mt-1.5 text-[12px] ${dark ? "text-white/50" : "text-gray-500"}`}>
+                          Price: {formatSubunits(consultQuote.listedMinor, consultQuote.currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {consultQuote.breakdown?.taxMinor > 0 ? " + taxes" : ""}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   
@@ -3501,7 +3536,7 @@ const Profile = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                     </svg>
                     <span>
-                      <strong>100% refund guarantee:</strong> if {profile.name || "the professional"} rejects your consultation request, your full payment will be refunded to your original payment method.
+                      <strong>100% refund guarantee:</strong> if {profile.name || "the professional"} rejects your consultation request, your full payment, taxes included, will be refunded to your original payment method.
                     </span>
                   </div>
                 )}
@@ -3662,6 +3697,25 @@ const Profile = () => {
           }}
         />
       )}
+      <CheckoutModal
+        open={consultCheckoutOpen}
+        onClose={() => setConsultCheckoutOpen(false)}
+        title={`Consultation with ${profile?.name || "the professional"}`}
+        subtitle={pitchData.date && pitchData.time ? `${pitchData.date} at ${pitchData.time}` : ""}
+        quoteKey={`${profile?._id}-${pitchData.duration}-${pitchData.currency || "INR"}`}
+        fetchQuote={async () => {
+          const { data } = await api.post("/consultations/quote", {
+            professionalId: profile?._id,
+            duration: pitchData.duration,
+            currency: pitchData.currency || "INR",
+          });
+          return data?.breakdown;
+        }}
+        onPay={(prepared) => handleDirectBooking(prepared)}
+        busy={sendingPitch}
+        dark={dark}
+        note="If the professional declines, the full amount, taxes included, is refunded."
+      />
     </ProfileRoot>
   );
 };

@@ -107,3 +107,32 @@
 @media (prefers-reduced-motion: reduce) {
   .ckm .ckm-challenge-register * { scroll-behavior: auto !important; }
 }
+
+/* The entry fee as the server priced it: fee, Taxes (18%), total. */
+.ckm .ckm-challenge-register__amount {
+  margin: 12px 0 0;
+  border: 1px solid var(--ckm-line, #e7e2df);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.ckm .ckm-challenge-register__amount-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ckm-line, #e7e2df);
+}
+
+.ckm .ckm-challenge-register__amount-row:last-child {
+  border-bottom: 0;
+}
+
+.ckm .ckm-challenge-register__amount-row dt,
+.ckm .ckm-challenge-register__amount-row dd {
+  margin: 0;
+}
+
+.ckm .ckm-challenge-register__amount-row[data-tone="total"] {
+  font-weight: 700;
+}
